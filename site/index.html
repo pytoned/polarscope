@@ -1,0 +1,448 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Polarscope — Simple data inspection for Polars</title>
+<meta name="description" content="Polarscope is a Polars-native data inspection library. Its xray() function gives you summary stats, distribution nanoplots, outlier and normality tests, and beautiful Great Tables output — no Pandas required." />
+<meta property="og:title" content="🔬 Polarscope" />
+<meta property="og:description" content="X-ray your Polars DataFrames: summary stats, histogram nanoplots, outliers & correlations in one beautiful table." />
+<meta property="og:type" content="website" />
+<link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🔬</text></svg>" />
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
+<style>
+  :root {
+    /* Great Tables pink */
+    --pink-700: #b81d63;
+    --pink-600: #d6336c;
+    --pink-500: #e5447d;
+    --pink-400: #f06595;
+    --pink-300: #f783ac;
+    --pink-200: #fcc2d7;
+    --pink-100: #ffe3ee;
+    --pink-50:  #fff5f9;
+    /* xray() accents */
+    --xray-blue: #4a90e2;
+    --xray-red:  #e24a4a;
+    --gray-head: #e9ecef;
+    --gray-soft: #f8f9fa;
+    /* ink */
+    --ink-900: #1f2230;
+    --ink-700: #3a3f52;
+    --ink-500: #6b7180;
+    --ink-300: #aab0bf;
+    --line: #efe3ea;
+    --radius: 18px;
+    --shadow-sm: 0 2px 8px rgba(214, 51, 108, .08);
+    --shadow-md: 0 10px 30px rgba(214, 51, 108, .12);
+    --shadow-lg: 0 24px 60px rgba(184, 29, 99, .18);
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html { scroll-behavior: smooth; }
+  body {
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    color: var(--ink-900);
+    background: var(--pink-50);
+    line-height: 1.6;
+    -webkit-font-smoothing: antialiased;
+    overflow-x: hidden;
+  }
+  code, pre, .mono { font-family: 'JetBrains Mono', ui-monospace, 'SF Mono', Menlo, monospace; }
+  a { color: var(--pink-600); text-decoration: none; }
+
+  .wrap { width: min(1120px, 92vw); margin-inline: auto; }
+
+  /* ---------- nav ---------- */
+  nav {
+    position: sticky; top: 0; z-index: 50;
+    backdrop-filter: saturate(160%) blur(12px);
+    background: rgba(255, 245, 249, .82);
+    border-bottom: 1px solid var(--line);
+  }
+  nav .wrap { display: flex; align-items: center; justify-content: space-between; height: 64px; }
+  .brand { display: flex; align-items: center; gap: .55rem; font-weight: 800; font-size: 1.15rem; }
+  .brand .scope { font-size: 1.35rem; }
+  .nav-links { display: flex; align-items: center; gap: 1.4rem; }
+  .nav-links a { color: var(--ink-700); font-weight: 600; font-size: .95rem; }
+  .nav-links a:hover { color: var(--pink-600); }
+  .nav-links .ghost { padding: .5rem 1rem; border: 1.5px solid var(--pink-200); border-radius: 999px; }
+  .nav-links .ghost:hover { background: var(--pink-100); border-color: var(--pink-300); }
+  @media (max-width: 720px) { .nav-links a:not(.ghost) { display: none; } }
+
+  /* ---------- hero ---------- */
+  .hero { position: relative; padding: 5.5rem 0 4rem; text-align: center; overflow: hidden; }
+  .hero::before {
+    content: ""; position: absolute; inset: -40% 0 auto 0; height: 120%;
+    background:
+      radial-gradient(closest-side, rgba(247, 131, 172, .35), transparent 70%) 18% 8% / 60% 70% no-repeat,
+      radial-gradient(closest-side, rgba(74, 144, 226, .18), transparent 70%) 84% 18% / 55% 60% no-repeat,
+      radial-gradient(closest-side, rgba(252, 194, 215, .45), transparent 70%) 60% 0% / 70% 65% no-repeat;
+    z-index: -1; filter: blur(6px);
+  }
+  .pill {
+    display: inline-flex; align-items: center; gap: .5rem;
+    background: #fff; border: 1px solid var(--pink-200);
+    color: var(--pink-700); font-weight: 600; font-size: .82rem;
+    padding: .4rem .9rem; border-radius: 999px; box-shadow: var(--shadow-sm);
+    margin-bottom: 1.6rem;
+  }
+  .pill .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--pink-500); box-shadow: 0 0 0 4px var(--pink-100); }
+  h1.title {
+    font-size: clamp(2.6rem, 6vw, 4.4rem); font-weight: 900; letter-spacing: -.03em; line-height: 1.04;
+  }
+  h1.title .grad {
+    background: linear-gradient(100deg, var(--pink-600), var(--pink-400) 55%, var(--xray-blue));
+    -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent;
+  }
+  .subtitle { max-width: 640px; margin: 1.3rem auto 0; font-size: clamp(1.05rem, 2.4vw, 1.3rem); color: var(--ink-700); }
+  .subtitle b { color: var(--ink-900); }
+
+  .cta { display: flex; gap: .9rem; justify-content: center; flex-wrap: wrap; margin-top: 2.2rem; }
+  .btn {
+    display: inline-flex; align-items: center; gap: .55rem;
+    font-weight: 700; font-size: 1rem; padding: .85rem 1.5rem; border-radius: 999px;
+    transition: transform .15s ease, box-shadow .15s ease, background .15s ease; cursor: pointer; border: none;
+  }
+  .btn svg { width: 20px; height: 20px; }
+  .btn-primary { background: linear-gradient(135deg, var(--pink-600), var(--pink-400)); color: #fff; box-shadow: var(--shadow-md); }
+  .btn-primary:hover { transform: translateY(-2px); box-shadow: var(--shadow-lg); }
+  .btn-ghost { background: #fff; color: var(--ink-900); border: 1.5px solid var(--pink-200); box-shadow: var(--shadow-sm); }
+  .btn-ghost:hover { transform: translateY(-2px); border-color: var(--pink-300); background: var(--pink-50); }
+
+  .install {
+    margin: 1.8rem auto 0; display: inline-flex; align-items: center; gap: .8rem;
+    background: var(--ink-900); color: #fff; padding: .6rem .6rem .6rem 1.1rem; border-radius: 12px;
+    box-shadow: var(--shadow-md); font-size: .98rem;
+  }
+  .install .prompt { color: var(--pink-300); user-select: none; }
+  .install code { color: #fff; }
+  .copy-btn {
+    background: rgba(255,255,255,.1); color: #fff; border: none; border-radius: 8px;
+    padding: .4rem .7rem; font-size: .82rem; font-weight: 600; cursor: pointer; transition: background .15s;
+  }
+  .copy-btn:hover { background: var(--pink-500); }
+
+  /* ---------- xray table visual ---------- */
+  .scope-wrap { margin-top: 3.5rem; perspective: 1600px; }
+  .xray {
+    width: min(880px, 96vw); margin-inline: auto; text-align: left;
+    background: #fff; border-radius: 20px; box-shadow: var(--shadow-lg);
+    overflow: hidden; border: 1px solid var(--line);
+    transform: rotateX(7deg); transform-origin: top center;
+  }
+  .xray-head { padding: 1.1rem 1.4rem; border-bottom: 1px solid var(--gray-head); background: var(--gray-soft); }
+  .xray-head h3 { font-size: 1.05rem; font-weight: 800; display: flex; align-items: center; gap: .5rem; }
+  .xray-head p { font-size: .82rem; color: var(--ink-500); margin-top: .15rem; }
+  table.xt { width: 100%; border-collapse: collapse; font-size: .85rem; }
+  table.xt thead th {
+    background: var(--gray-head); color: var(--ink-700); font-weight: 700; text-align: left;
+    padding: .6rem 1rem; font-size: .72rem; letter-spacing: .04em; text-transform: uppercase;
+  }
+  table.xt tbody td { padding: .7rem 1rem; border-top: 1px solid #f1f3f5; vertical-align: middle; }
+  table.xt tbody tr:hover { background: var(--pink-50); }
+  .col-name { font-weight: 700; }
+  .dtype { font-family: 'JetBrains Mono', monospace; font-size: .76rem; color: var(--pink-600); background: var(--pink-100); padding: .12rem .45rem; border-radius: 6px; }
+  /* missing bar */
+  .miss { display: flex; align-items: center; gap: .5rem; }
+  .miss .track { width: 56px; height: 7px; background: var(--gray-head); border-radius: 4px; overflow: hidden; }
+  .miss .fill { height: 100%; background: linear-gradient(90deg, var(--pink-400), var(--pink-600)); border-radius: 4px; }
+  .miss span { font-size: .76rem; color: var(--ink-500); }
+  /* nanoplot histogram */
+  .nano { display: flex; align-items: flex-end; gap: 2px; height: 30px; }
+  .nano i { width: 6px; border-radius: 2px 2px 0 0; background: linear-gradient(180deg, var(--pink-400), var(--pink-200)); display: block; }
+  .nano.blue i { background: linear-gradient(180deg, var(--xray-blue), #bcd6f5); }
+  /* data bar (mean) */
+  .dbar { display: flex; align-items: center; gap: .6rem; }
+  .dbar .bar { height: 20px; background: linear-gradient(90deg, var(--xray-blue), #7db4ee); border-radius: 4px; }
+  .dbar .neg { background: linear-gradient(90deg, #ef8d8d, var(--xray-red)); }
+  .dbar .val { font-family: 'JetBrains Mono', monospace; font-size: .78rem; color: var(--ink-700); }
+
+  /* ---------- section shells ---------- */
+  section.block { padding: 4.5rem 0; }
+  .eyebrow { color: var(--pink-600); font-weight: 800; font-size: .8rem; letter-spacing: .12em; text-transform: uppercase; text-align: center; }
+  h2.h2 { text-align: center; font-size: clamp(1.9rem, 4vw, 2.7rem); font-weight: 900; letter-spacing: -.02em; margin-top: .5rem; }
+  .lead { text-align: center; color: var(--ink-700); max-width: 600px; margin: .9rem auto 0; font-size: 1.08rem; }
+
+  /* ---------- feature grid ---------- */
+  .grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 1.4rem; margin-top: 3rem; }
+  @media (max-width: 860px) { .grid { grid-template-columns: 1fr; } }
+  .card {
+    background: #fff; border: 1px solid var(--line); border-radius: var(--radius);
+    padding: 1.8rem; box-shadow: var(--shadow-sm); transition: transform .18s ease, box-shadow .18s ease, border-color .18s;
+    position: relative; overflow: hidden;
+  }
+  .card::after { content: ""; position: absolute; inset: 0 0 auto 0; height: 4px; background: linear-gradient(90deg, var(--pink-500), var(--pink-300)); opacity: 0; transition: opacity .2s; }
+  .card:hover { transform: translateY(-5px); box-shadow: var(--shadow-md); border-color: var(--pink-200); }
+  .card:hover::after { opacity: 1; }
+  .card .ico { width: 48px; height: 48px; display: grid; place-items: center; font-size: 1.5rem; border-radius: 14px; background: var(--pink-100); margin-bottom: 1.1rem; }
+  .card h3 { font-size: 1.18rem; font-weight: 800; margin-bottom: .5rem; }
+  .card p { color: var(--ink-700); font-size: .96rem; }
+  .card code { font-size: .85rem; color: var(--pink-700); background: var(--pink-50); padding: .1rem .35rem; border-radius: 5px; }
+
+  /* ---------- quickstart ---------- */
+  .qs { background: linear-gradient(180deg, #fff, var(--pink-50)); border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); }
+  .qs-grid { display: grid; grid-template-columns: 1fr 1.15fr; gap: 2.6rem; align-items: center; margin-top: 2.5rem; }
+  @media (max-width: 860px) { .qs-grid { grid-template-columns: 1fr; } }
+  .qs-grid h3 { font-size: 1.5rem; font-weight: 800; }
+  .qs-grid ul { list-style: none; margin-top: 1.1rem; display: flex; flex-direction: column; gap: .7rem; }
+  .qs-grid li { display: flex; gap: .6rem; color: var(--ink-700); }
+  .qs-grid li::before { content: "✦"; color: var(--pink-500); font-weight: 700; }
+  .codeblock { background: #1f2230; border-radius: 16px; box-shadow: var(--shadow-lg); overflow: hidden; }
+  .codeblock .topbar { display: flex; align-items: center; gap: .5rem; padding: .8rem 1rem; background: #2a2e40; }
+  .codeblock .topbar i { width: 12px; height: 12px; border-radius: 50%; display: block; }
+  .codeblock .topbar .f { font-family: 'JetBrains Mono', monospace; font-size: .76rem; color: #8b91a7; margin-left: .6rem; }
+  .codeblock pre { padding: 1.3rem 1.4rem; overflow-x: auto; font-size: .9rem; line-height: 1.7; }
+  .codeblock pre code { color: #e6e8ef; }
+  .tok-kw { color: #f783ac; } .tok-fn { color: #82b9f5; } .tok-str { color: #b3e88f; } .tok-com { color: #6b7180; } .tok-var { color: #ffd9a8; }
+
+  /* ---------- final cta ---------- */
+  .final { text-align: center; padding: 5rem 0; }
+  .final-card {
+    background: linear-gradient(135deg, var(--pink-600), var(--pink-400) 60%, var(--xray-blue));
+    border-radius: 28px; padding: 3.4rem 2rem; color: #fff; box-shadow: var(--shadow-lg); position: relative; overflow: hidden;
+  }
+  .final-card::before { content: "🔬"; position: absolute; font-size: 11rem; opacity: .12; right: -1rem; bottom: -2.5rem; }
+  .final-card h2 { font-size: clamp(1.8rem, 4vw, 2.6rem); font-weight: 900; letter-spacing: -.02em; }
+  .final-card p { margin-top: .7rem; font-size: 1.1rem; opacity: .95; }
+  .final-card .cta { margin-top: 2rem; }
+  .final-card .btn-ghost { background: rgba(255,255,255,.14); color: #fff; border-color: rgba(255,255,255,.35); backdrop-filter: blur(4px); }
+  .final-card .btn-ghost:hover { background: rgba(255,255,255,.24); }
+  .final-card .btn-primary { background: #fff; color: var(--pink-700); }
+
+  /* ---------- footer ---------- */
+  footer { padding: 3rem 0; border-top: 1px solid var(--line); color: var(--ink-500); font-size: .92rem; }
+  footer .wrap { display: flex; flex-wrap: wrap; gap: 1rem; align-items: center; justify-content: space-between; }
+  footer .flinks { display: flex; gap: 1.4rem; }
+  footer .flinks a { color: var(--ink-700); font-weight: 600; }
+  footer .flinks a:hover { color: var(--pink-600); }
+
+  /* reveal */
+  .reveal { opacity: 0; transform: translateY(22px); transition: opacity .6s ease, transform .6s ease; }
+  .reveal.in { opacity: 1; transform: none; }
+  @media (prefers-reduced-motion: reduce) { .reveal { opacity: 1; transform: none; } .xray { transform: none; } }
+</style>
+</head>
+<body>
+
+<nav>
+  <div class="wrap">
+    <div class="brand"><span class="scope">🔬</span> Polarscope</div>
+    <div class="nav-links">
+      <a href="#features">Features</a>
+      <a href="#quickstart">Quick start</a>
+      <a href="https://pypi.org/project/polarscope/" target="_blank" rel="noopener">PyPI</a>
+      <a class="ghost" href="https://github.com/pytoned/polarscope" target="_blank" rel="noopener">GitHub ↗</a>
+    </div>
+  </div>
+</nav>
+
+<header class="hero">
+  <div class="wrap">
+    <span class="pill"><span class="dot"></span> Polars-native data inspection · built with Great Tables</span>
+    <h1 class="title">X-ray your data.<br /><span class="grad">See everything at a glance.</span></h1>
+    <p class="subtitle">Polarscope turns a <b>Polars DataFrame</b> into one beautiful, information-dense table — summary stats, distribution nanoplots, outliers, normality tests and correlations. <b>No Pandas required.</b></p>
+
+    <div class="cta">
+      <a class="btn btn-primary" href="https://pypi.org/project/polarscope/" target="_blank" rel="noopener">
+        <svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 2 3 7v10l9 5 9-5V7l-9-5Zm0 2.3 6.5 3.6-6.5 3.6-6.5-3.6L12 4.3ZM5 9.2l6 3.3v7L5 16.2V9.2Zm14 0v7l-6 3.3v-7l6-3.3Z"/></svg>
+        Get it on PyPI
+      </a>
+      <a class="btn btn-ghost" href="https://github.com/pytoned/polarscope" target="_blank" rel="noopener">
+        <svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 .5C5.7.5.5 5.7.5 12c0 5.1 3.3 9.4 7.9 10.9.6.1.8-.2.8-.5v-2c-3.2.7-3.9-1.4-3.9-1.4-.5-1.3-1.3-1.7-1.3-1.7-1.1-.7.1-.7.1-.7 1.2.1 1.8 1.2 1.8 1.2 1 1.8 2.7 1.3 3.4 1 .1-.8.4-1.3.7-1.6-2.6-.3-5.3-1.3-5.3-5.7 0-1.3.4-2.3 1.2-3.1-.1-.3-.5-1.5.1-3.1 0 0 1-.3 3.3 1.2a11.4 11.4 0 0 1 6 0C17.3 4.7 18.3 5 18.3 5c.6 1.6.2 2.8.1 3.1.8.8 1.2 1.8 1.2 3.1 0 4.4-2.7 5.4-5.3 5.7.4.4.8 1.1.8 2.2v3.3c0 .3.2.6.8.5 4.6-1.5 7.9-5.8 7.9-10.9C23.5 5.7 18.3.5 12 .5Z"/></svg>
+        View on GitHub
+      </a>
+    </div>
+
+    <div class="install">
+      <span class="prompt">$</span><code id="installcmd">pip install polarscope</code>
+      <button class="copy-btn" onclick="copyInstall(this)">Copy</button>
+    </div>
+
+    <!-- recreated xray() output -->
+    <div class="scope-wrap reveal">
+      <div class="xray">
+        <div class="xray-head">
+          <h3>🔬 X-ray · titanic</h3>
+          <p>891 rows × 6 columns · generated with <code style="font-size:.78rem">ps.xray(df, expanded=True)</code></p>
+        </div>
+        <table class="xt">
+          <thead>
+            <tr><th>Column</th><th>Type</th><th>Missing</th><th>Distribution</th><th>Mean</th></tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td class="col-name">Survived</td>
+              <td><span class="dtype">i64</span></td>
+              <td><div class="miss"><div class="track"><div class="fill" style="width:0%"></div></div><span>0%</span></div></td>
+              <td><div class="nano"><i style="height:38%"></i><i style="height:100%"></i><i style="height:0"></i><i style="height:62%"></i></div></td>
+              <td><div class="dbar"><div class="bar" style="width:38px"></div><span class="val">0.38</span></div></td>
+            </tr>
+            <tr>
+              <td class="col-name">Pclass</td>
+              <td><span class="dtype">i64</span></td>
+              <td><div class="miss"><div class="track"><div class="fill" style="width:0%"></div></div><span>0%</span></div></td>
+              <td><div class="nano"><i style="height:48%"></i><i style="height:30%"></i><i style="height:100%"></i></div></td>
+              <td><div class="dbar"><div class="bar" style="width:77px"></div><span class="val">2.31</span></div></td>
+            </tr>
+            <tr>
+              <td class="col-name">Age</td>
+              <td><span class="dtype">f64</span></td>
+              <td><div class="miss"><div class="track"><div class="fill" style="width:20%"></div></div><span>19.9%</span></div></td>
+              <td><div class="nano"><i style="height:20%"></i><i style="height:55%"></i><i style="height:100%"></i><i style="height:78%"></i><i style="height:42%"></i><i style="height:22%"></i><i style="height:10%"></i></div></td>
+              <td><div class="dbar"><div class="bar" style="width:99px"></div><span class="val">29.7</span></div></td>
+            </tr>
+            <tr>
+              <td class="col-name">Fare</td>
+              <td><span class="dtype">f64</span></td>
+              <td><div class="miss"><div class="track"><div class="fill" style="width:0%"></div></div><span>0%</span></div></td>
+              <td><div class="nano"><i style="height:100%"></i><i style="height:40%"></i><i style="height:20%"></i><i style="height:12%"></i><i style="height:8%"></i><i style="height:6%"></i></div></td>
+              <td><div class="dbar"><div class="bar" style="width:108px"></div><span class="val">32.2</span></div></td>
+            </tr>
+            <tr>
+              <td class="col-name">Sex</td>
+              <td><span class="dtype">str</span></td>
+              <td><div class="miss"><div class="track"><div class="fill" style="width:0%"></div></div><span>0%</span></div></td>
+              <td><div class="nano blue"><i style="height:65%"></i><i style="height:100%"></i></div></td>
+              <td><div class="dbar"><span class="val" style="color:var(--ink-300)">2 cats</span></div></td>
+            </tr>
+            <tr>
+              <td class="col-name">Embarked</td>
+              <td><span class="dtype">str</span></td>
+              <td><div class="miss"><div class="track"><div class="fill" style="width:2%"></div></div><span>0.2%</span></div></td>
+              <td><div class="nano blue"><i style="height:100%"></i><i style="height:26%"></i><i style="height:34%"></i></div></td>
+              <td><div class="dbar"><span class="val" style="color:var(--ink-300)">3 cats</span></div></td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</header>
+
+<section class="block" id="features">
+  <div class="wrap">
+    <p class="eyebrow">Why Polarscope</p>
+    <h2 class="h2">Everything you need to know your data</h2>
+    <p class="lead">One function call. Six kinds of insight. Rendered as a table you'll actually want to look at.</p>
+
+    <div class="grid">
+      <div class="card reveal">
+        <div class="ico">🔬</div>
+        <h3>One-call <code>xray()</code></h3>
+        <p>Summary statistics for every column by default, or <code>include="all"</code> for mixed types — all in a single inspection table.</p>
+      </div>
+      <div class="card reveal">
+        <div class="ico">📈</div>
+        <h3>Deep stats, on demand</h3>
+        <p>Flip <code>expanded=True</code> for normality &amp; uniformity tests, outlier metrics, usability flags and correlation details.</p>
+      </div>
+      <div class="card reveal">
+        <div class="ico">🌸</div>
+        <h3>Great Tables output</h3>
+        <p>Beautiful tables with histogram nanoplots and data bars — or pass <code>great_tables=False</code> to get a plain Polars DataFrame.</p>
+      </div>
+      <div class="card reveal">
+        <div class="ico">🐻‍❄️</div>
+        <h3>Polars-native</h3>
+        <p>Core data handling is implemented entirely in Polars. Fast, typed, and <b>no Pandas required</b>.</p>
+      </div>
+      <div class="card reveal">
+        <div class="ico">🧹</div>
+        <h3>Cleaning utilities</h3>
+        <p><code>clean_column_names</code>, <code>convert_datatypes</code> and <code>drop_missing</code> to tidy frames before you analyze them.</p>
+      </div>
+      <div class="card reveal">
+        <div class="ico">📊</div>
+        <h3>Plots &amp; datasets</h3>
+        <p>Correlation, missing-value, distribution and categorical plots — plus built-in <code>titanic</code> and <code>diabetes</code> datasets to play with.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="block qs" id="quickstart">
+  <div class="wrap">
+    <p class="eyebrow">Quick start</p>
+    <h2 class="h2">Up and running in seconds</h2>
+    <div class="qs-grid">
+      <div class="reveal">
+        <h3>Install &amp; x-ray</h3>
+        <ul>
+          <li>Works with any Polars DataFrame or built-in dataset</li>
+          <li>Targeted correlations via <code>corr_target</code></li>
+          <li>Choose your outlier method: IQR, percentile or z-score</li>
+          <li>Render rich Great Tables or raw Polars output</li>
+        </ul>
+        <div class="cta" style="justify-content:flex-start;margin-top:1.8rem">
+          <a class="btn btn-primary" href="https://pypi.org/project/polarscope/" target="_blank" rel="noopener">Install from PyPI</a>
+        </div>
+      </div>
+      <div class="codeblock reveal">
+        <div class="topbar"><i style="background:#ff5f57"></i><i style="background:#febc2e"></i><i style="background:#28c840"></i><span class="f">analysis.py</span></div>
+<pre><code><span class="tok-kw">import</span> polars <span class="tok-kw">as</span> pl
+<span class="tok-kw">import</span> polarscope <span class="tok-kw">as</span> ps
+<span class="tok-kw">from</span> polarscope.datasets <span class="tok-kw">import</span> titanic
+
+<span class="tok-com"># load a built-in dataset (or your own)</span>
+<span class="tok-var">df</span> = <span class="tok-fn">titanic</span>()
+
+<span class="tok-com"># the whole library, in one call</span>
+ps.<span class="tok-fn">xray</span>(<span class="tok-var">df</span>)
+
+<span class="tok-com"># go deeper: tests, outliers, correlations</span>
+ps.<span class="tok-fn">xray</span>(
+    <span class="tok-var">df</span>,
+    expanded=<span class="tok-kw">True</span>,
+    corr_target=<span class="tok-str">"Survived"</span>,
+    outlier_method=<span class="tok-str">"iqr"</span>,
+)</code></pre>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="final">
+  <div class="wrap">
+    <div class="final-card reveal">
+      <h2>Give your DataFrames an x-ray</h2>
+      <p>Free, open source and MIT licensed. <code style="background:rgba(255,255,255,.18);padding:.1rem .4rem;border-radius:5px;color:#fff">pip install polarscope</code></p>
+      <div class="cta">
+        <a class="btn btn-primary" href="https://pypi.org/project/polarscope/" target="_blank" rel="noopener">Get it on PyPI</a>
+        <a class="btn btn-ghost" href="https://github.com/pytoned/polarscope" target="_blank" rel="noopener">Star on GitHub</a>
+      </div>
+    </div>
+  </div>
+</section>
+
+<footer>
+  <div class="wrap">
+    <div class="brand"><span class="scope">🔬</span> Polarscope</div>
+    <div class="flinks">
+      <a href="https://github.com/pytoned/polarscope" target="_blank" rel="noopener">GitHub</a>
+      <a href="https://pypi.org/project/polarscope/" target="_blank" rel="noopener">PyPI</a>
+      <a href="https://github.com/pytoned/polarscope/blob/main/LICENSE" target="_blank" rel="noopener">MIT License</a>
+    </div>
+    <div style="flex-basis:100%;color:var(--ink-300);font-size:.86rem">
+      Built with <a href="https://github.com/posit-dev/great-tables" target="_blank" rel="noopener">great_tables</a> · inspired by <a href="https://github.com/akanz1/klib" target="_blank" rel="noopener">klib</a> · made with 🩷 for the Polars community
+    </div>
+  </div>
+</footer>
+
+<script>
+  function copyInstall(btn) {
+    navigator.clipboard.writeText('pip install polarscope').then(function () {
+      var t = btn.textContent; btn.textContent = 'Copied!';
+      setTimeout(function () { btn.textContent = t; }, 1400);
+    });
+  }
+  // scroll reveal
+  var io = new IntersectionObserver(function (entries) {
+    entries.forEach(function (e) { if (e.isIntersecting) { e.target.classList.add('in'); io.unobserve(e.target); } });
+  }, { threshold: .12 });
+  document.querySelectorAll('.reveal').forEach(function (el) { io.observe(el); });
+</script>
+</body>
+</html>
