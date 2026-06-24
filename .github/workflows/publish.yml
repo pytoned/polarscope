@@ -23,10 +23,10 @@ jobs:
       - name: Verify tag matches package version
         run: |
           TAG="${GITHUB_REF_NAME#v}"
-          VER=$(python -c "import tomllib, pathlib; print(tomllib.loads(pathlib.Path('pyproject.toml').read_text())['project']['version'])")
-          echo "git tag: v$TAG | pyproject version: $VER"
+          VER=$(python -c "import re, pathlib; print(re.search(r'__version__\s*=\s*\"([^\"]+)\"', pathlib.Path('polarscope/__init__.py').read_text()).group(1))")
+          echo "git tag: v$TAG | package version: $VER"
           if [ "$TAG" != "$VER" ]; then
-            echo "::error::Tag v$TAG does not match pyproject.toml version $VER"
+            echo "::error::Tag v$TAG does not match polarscope/__init__.py version ($VER)"
             exit 1
           fi
 
