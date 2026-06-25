@@ -1,6 +1,6 @@
 
 from __future__ import annotations
-from typing import Iterable, Sequence, Tuple, List, Optional
+from typing import Iterable, Sequence, List
 import math
 import polars as pl
 import polars.selectors as cs
@@ -28,36 +28,7 @@ def _ensure_columns(df: pl.DataFrame, columns: Iterable[str] | None) -> list[str
         dtypes = dict(zip(df.columns, df.dtypes))
         return [c for c in valid_cols if dtypes[c].is_numeric()]
 
-def _corr_pair(df: pl.DataFrame, c1: str, c2: str) -> float:
-    return df.select(pl.corr(pl.col(c1), pl.col(c2), method="pearson")).item()
-
-def _corr_matrix(df: pl.DataFrame, cols: Sequence[str]) -> List[List[float]]:
-    try:
-        return df.select(cols).corr().to_numpy().tolist()
-    except Exception:
-        n = len(cols)
-        mat = [[0.0] * n for _ in range(n)]
-        for i in range(n):
-            for j in range(i, n):
-                r = 1.0 if i == j else float(_corr_pair(df, cols[i], cols[j]))
-                mat[i][j] = r
-                mat[j][i] = r
-        return mat
-
-
 # ---------- Plotly backends ----------
-
-def _corr_heatmap_plotly(cols: Sequence[str], mat: List[List[float]], annotate: bool, width, height):
-    import plotly.graph_objects as go
-    fig = go.Figure(data=go.Heatmap(z=mat, x=list(cols), y=list(cols), zmin=-1, zmax=1, colorbar=dict(title="r")))
-    fig.update_layout(title="Correlation heatmap (Pearson)", width=width, height=height)
-    if annotate:
-        annotations = []
-        for i, row in enumerate(mat):
-            for j, val in enumerate(row):
-                annotations.append(dict(showarrow=False, text=f"{val:.2f}", x=cols[j], y=cols[i]))
-        fig.update_layout(annotations=annotations)
-    return fig
 
 def _dist_plot_plotly(s: pl.Series, column: str, bins: int, width, height):
     import plotly.graph_objects as go
@@ -217,24 +188,6 @@ def _corr_plot_plotly(columns: list[str], corr_matrix: list, method: str, intera
 
 # ---------- Altair backends ----------
 
-def _corr_heatmap_altair(cols: Sequence[str], mat: List[List[float]], annotate: bool, width, height):
-    import altair as alt
-    data = [{"row": r, "col": c, "r": mat[i][j]} for i, r in enumerate(cols) for j, c in enumerate(cols)]
-    df_data = pl.DataFrame(data)
-    base = alt.Chart(df_data).mark_rect().encode(
-        x=alt.X("col:N", title=None),
-        y=alt.Y("row:N", title=None),
-        color=alt.Color("r:Q", scale=alt.Scale(domain=[-1, 1]))
-    ).properties(title="Correlation heatmap (Pearson)")
-    if width:  base = base.properties(width=width)
-    if height: base = base.properties(height=height)
-    if annotate:
-        text = alt.Chart(df_data).mark_text().encode(x="col:N", y="row:N", text=alt.Text("r:Q", format=".2f"))
-        if width:  text = text.properties(width=width)
-        if height: text = text.properties(height=height)
-        return base + text
-    return base
-
 def _corr_heatmap_altair_enhanced(row_labels: list, col_labels: list, mat: List[List[float]], annotate: bool, method: str, target: str, width, height):
     import altair as alt
     
@@ -296,8 +249,7 @@ def _corr_heatmap_altair_enhanced(row_labels: list, col_labels: list, mat: List[
 
 def _dist_plot_altair(s: pl.Series, column: str, bins: int, width, height):
     import altair as alt
-    data = [{column: v} for v in s.to_list()]
-    df_data = pl.DataFrame(data)
+    df_data = pl.DataFrame({column: s})
     chart = alt.Chart(df_data).mark_bar().encode(
         x=alt.X(f"{column}:Q", bin=alt.Bin(maxbins=bins)),
         y="count()",

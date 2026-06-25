@@ -6,3 +6,16 @@ __pycache__/
 *.egg-info/
 dist/
 build/
+
+# OS files
+.DS_Store
+
+# Test / coverage artifacts
+.coverage
+.coverage.*
+htmlcov/
+.pytest_cache/
+
+# Generated benchmark output
+performance_results.json
+demo/performance_results.json

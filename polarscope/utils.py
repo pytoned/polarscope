@@ -31,17 +31,3 @@ def save_fig(obj, path: str, *, scale: float = 1.0):
         return
     # assume Altair
     obj.save(path)
-
-
-def fig_to_base64_png(fig) -> str:
-    """
-    Convert a Matplotlib Figure to a base64 PNG data URL string.
-    Safe no-op for non-matplotlib objects (raises ValueError).
-    """
-    if not hasattr(fig, "savefig"):
-        raise ValueError("fig_to_base64_png expects a Matplotlib Figure")
-    import io, base64
-    buf = io.BytesIO()
-    fig.savefig(buf, format="png", dpi=150, bbox_inches="tight")
-    data = base64.b64encode(buf.getvalue()).decode("ascii")
-    return f"data:image/png;base64,{data}"

@@ -302,8 +302,8 @@ class TestDatasets:
     """Dataset path safety and normalization tests."""
 
     def test_get_data_path_simple_filename(self):
-        path = _get_data_path("titanic.csv")
-        assert path.name == "titanic.csv"
+        path = _get_data_path("titanic.parquet")
+        assert path.name == "titanic.parquet"
 
     def test_get_data_path_blocks_parent_escape(self):
         with pytest.raises(ValueError):
@@ -314,8 +314,8 @@ class TestDatasets:
             _get_data_path("/etc/passwd")
 
     def test_get_data_path_normalizes_nested_paths(self):
-        path = _get_data_path("subdir/../titanic.csv")
-        assert path.name == "titanic.csv"
+        path = _get_data_path("subdir/../titanic.parquet")
+        assert path.name == "titanic.parquet"
 
 
 class TestPlottingFunctions:
