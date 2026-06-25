@@ -60,12 +60,10 @@ def _get_data_path(filename: str) -> Path:
     except (ImportError, FileNotFoundError):
         pass
 
-    # Development mode fallbacks
+    # Development mode fallback (source tree): datasets live in polarscope/data
     current_file = Path(__file__).parent
     candidate_paths = [
         current_file / "data" / normalized,
-        current_file.parent / "datasets" / normalized,
-        current_file / "datasets" / normalized,
     ]
 
     for candidate in candidate_paths:
@@ -192,35 +190,101 @@ def load_diabetes(return_polars: bool = True) -> pl.DataFrame:
     - Outcome: Class variable (0 or 1) - diabetes diagnosis
     """
     data_path = _get_data_path("diabetes.parquet")
-    
+
     if not return_polars:
         return str(data_path)
-    
+
+    return pl.read_parquet(data_path)
+
+
+def load_cardio(return_polars: bool = True) -> pl.DataFrame:
+    """
+    Load the Cardiovascular Disease dataset.
+
+    The Cardio dataset contains health examination records used to predict the
+    presence of cardiovascular disease. It is a larger, all-numeric dataset,
+    making it useful for demonstrating performance on bigger frames and for
+    classification tasks.
+
+    Parameters
+    ----------
+    return_polars : bool, default True
+        If True, returns a Polars DataFrame. If False, returns the file path
+        as a string for custom loading.
+
+    Returns
+    -------
+    pl.DataFrame or str
+        Either a Polars DataFrame containing the cardio data, or the path
+        to the parquet file.
+
+    Examples
+    --------
+    Load the cardio dataset:
+
+    >>> from polarscope.datasets import load_cardio
+    >>> df = load_cardio()
+    >>> print(df.shape)
+    (70000, 13)
+
+    Get the file path instead:
+
+    >>> file_path = load_cardio(return_polars=False)
+    >>> df = pl.read_parquet(file_path)
+
+    Dataset Information
+    -------------------
+    - **Rows**: 70,000 examination records
+    - **Columns**: 13 features (incl. the ``cardio`` target)
+    - **Missing values**: None
+    - **Data types**: All numeric
+
+    Columns:
+    - id: Record identifier
+    - age: Age in days
+    - gender: Gender code (1, 2)
+    - height: Height in cm
+    - weight: Weight in kg
+    - ap_hi: Systolic blood pressure
+    - ap_lo: Diastolic blood pressure
+    - cholesterol: Cholesterol level (1 = normal, 2 = above normal, 3 = well above normal)
+    - gluc: Glucose level (1 = normal, 2 = above normal, 3 = well above normal)
+    - smoke: Whether the patient smokes (0/1)
+    - alco: Whether the patient drinks alcohol (0/1)
+    - active: Whether the patient is physically active (0/1)
+    - cardio: Presence of cardiovascular disease (0 = No, 1 = Yes) - target
+    """
+    data_path = _get_data_path("cardio.parquet")
+
+    if not return_polars:
+        return str(data_path)
+
     return pl.read_parquet(data_path)
 
 
 # Convenience aliases for easier access
 titanic = load_titanic
 diabetes = load_diabetes
+cardio = load_cardio
 
 
 def list_datasets() -> list[str]:
     """
     List all available datasets.
-    
+
     Returns
     -------
     list[str]
         List of available dataset names.
-        
+
     Examples
     --------
     >>> from polarscope.datasets import list_datasets
     >>> datasets = list_datasets()
     >>> print(datasets)
-    ['titanic', 'diabetes']
+    ['titanic', 'diabetes', 'cardio']
     """
-    return ['titanic', 'diabetes']
+    return ['titanic', 'diabetes', 'cardio']
 
 
 def dataset_info(name: str) -> str:
@@ -268,7 +332,20 @@ Pima Indians Diabetes medical diagnostic data.
 • Use case: Medical prediction, statistical analysis
 • Perfect for: Demonstrating statistical tests, distribution analysis, correlation
         """.strip()
-    
+
+    elif name.lower() == 'cardio':
+        return """
+Cardiovascular Disease Dataset
+==============================
+Health examination records for cardiovascular disease prediction.
+
+• Rows: 70,000 records
+• Columns: 13 features (incl. the `cardio` target)
+• Missing values: None
+• Use case: Classification, performance on larger frames
+• Perfect for: Demonstrating xray() on big data, distribution/outlier analysis
+        """.strip()
+
     else:
         available = ', '.join(list_datasets())
         raise ValueError(f"Unknown dataset '{name}'. Available datasets: {available}")
@@ -276,6 +353,7 @@ Pima Indians Diabetes medical diagnostic data.
 
 # For backward compatibility and convenience
 __all__ = [
-    'load_titanic', 'load_diabetes', 'titanic', 'diabetes',
+    'load_titanic', 'load_diabetes', 'load_cardio',
+    'titanic', 'diabetes', 'cardio',
     'list_datasets', 'dataset_info'
 ]

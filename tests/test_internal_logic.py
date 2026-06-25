@@ -38,22 +38,34 @@ def test_clean_normalize_and_dedupe_paths() -> None:
 
 def test_datasets_loaders_and_info() -> None:
     names = datasets_mod.list_datasets()
-    assert set(names) == {"titanic", "diabetes"}
+    assert set(names) == {"titanic", "diabetes", "cardio"}
 
     titanic_path = datasets_mod.load_titanic(return_polars=False)
     diabetes_path = datasets_mod.load_diabetes(return_polars=False)
+    cardio_path = datasets_mod.load_cardio(return_polars=False)
     assert titanic_path.endswith("titanic.parquet")
     assert diabetes_path.endswith("diabetes.parquet")
+    assert cardio_path.endswith("cardio.parquet")
 
     titanic_df = datasets_mod.load_titanic()
     diabetes_df = datasets_mod.load_diabetes()
+    cardio_df = datasets_mod.load_cardio()
     assert isinstance(titanic_df, pl.DataFrame)
     assert isinstance(diabetes_df, pl.DataFrame)
+    assert isinstance(cardio_df, pl.DataFrame)
     assert titanic_df.height > 0
     assert diabetes_df.height > 0
+    assert cardio_df.height > 0
+
+    # Top-level convenience aliases load the shipped data.
+    import polarscope as ps
+    assert ps.titanic().height == titanic_df.height
+    assert ps.diabetes().height == diabetes_df.height
+    assert ps.cardio().height == cardio_df.height
 
     assert "Titanic Dataset" in datasets_mod.dataset_info("titanic")
     assert "Diabetes Dataset" in datasets_mod.dataset_info("diabetes")
+    assert "Cardiovascular Disease Dataset" in datasets_mod.dataset_info("cardio")
     with pytest.raises(ValueError):
         datasets_mod.dataset_info("unknown")
 

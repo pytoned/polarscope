@@ -3,11 +3,13 @@ from .plots import corr_heatmap, dist_plot, missingval_plot, cat_plot, corr_plot
 from .utils import save_fig
 from .xray import xray
 from . import datasets
+from .datasets import titanic, diabetes, cardio
 from . import clean
-from . import plots  
+from . import plots
 from . import utils
 
 __all__ = [
+    "cardio",               # Built-in Cardiovascular Disease dataset loader
     "cat_plot",             # Categorical data plotting
     "clean",                # Data cleaning module
     "clean_column_names",   # Column name standardization
@@ -16,11 +18,13 @@ __all__ = [
     "corr_plot",            # Correlation scatter plots
     "data_cleaning",        # Comprehensive data cleaning pipeline
     "datasets",             # Built-in datasets for testing
+    "diabetes",             # Built-in Diabetes dataset loader
     "dist_plot",            # Distribution plotting
     "drop_missing",         # Missing value removal
     "missingval_plot",      # Missing value pattern visualization
     "plots",                # Plotting module
     "save_fig",             # Universal figure saving utility
+    "titanic",              # Built-in Titanic dataset loader
     "utils",                # Utility functions module
     "xray",                 # Main data inspection function
 ]
