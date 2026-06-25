@@ -1,6 +1,7 @@
 # 🔬 Polarscope
 
-[![PyPI - Python Version](https://img.shields.io/pypi/pyversions/polars.svg)](https://pypi.org/project/polars/)
+[![PyPI](https://img.shields.io/pypi/v/polarscope.svg)](https://pypi.org/project/polarscope/)
+[![PyPI - Python Version](https://img.shields.io/pypi/pyversions/polarscope.svg)](https://pypi.org/project/polarscope/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
 **Simple data inspection tools for Polars** 🐻‍❄️
