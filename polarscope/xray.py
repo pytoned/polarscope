@@ -30,12 +30,13 @@ def _check_scipy_availability():
 def _format_memory_usage(df: pl.DataFrame) -> str:
     """Format memory usage with appropriate units using Polars unit parameter."""
     try:
-        if df.estimated_size(unit='mb') >= 1000:  # >= 1 GB
-            return f"{df.estimated_size(unit='gb'):.1f} GB"
-        elif df.estimated_size(unit='mb') >= 1.0:  # >= 1 MB
-            return f"{df.estimated_size(unit='mb'):.1f} MB"
+        size_mb = df.estimated_size(unit='mb')
+        if size_mb >= 1000:  # >= 1 GB
+            return f"{size_mb / 1024:.1f} GB"
+        elif size_mb >= 1.0:  # >= 1 MB
+            return f"{size_mb:.1f} MB"
         else:  # < 1 MB, use KB
-            return f"{df.estimated_size(unit='kb'):.1f} KB"
+            return f"{size_mb * 1024:.1f} KB"
     except Exception:
         # Fallback for older Polars versions
         try:
@@ -323,12 +324,15 @@ def xray(
     
     if uniformity_test not in ["ks", "chi2"]:
         raise ValueError("uniformity_test must be 'ks' or 'chi2'")
+
+    if distribution_plot not in ["histogram"]:
+        raise ValueError("distribution_plot must be 'histogram'")
     
     # Validate correlation target
     if corr_target:
         if corr_target not in df.columns:
             raise ValueError(f"Target column '{corr_target}' not found in DataFrame")
-        target_dtype = df.select(pl.col(corr_target)).dtypes[0]
+        target_dtype = df.schema[corr_target]
         if not target_dtype.is_numeric():
             raise ValueError(f"Target column '{corr_target}' must be numeric, got {target_dtype}")
     
@@ -338,8 +342,9 @@ def xray(
     # Calculate comprehensive statistics for all columns
     stats_data = []
     
+    schema = df.schema
     for col in all_cols:
-        dtype = df.select(pl.col(col)).dtypes[0]
+        dtype = schema[col]
         is_numeric = dtype.is_numeric()
         series = df[col]
         series_clean = series.drop_nulls()
@@ -427,15 +432,13 @@ def xray(
             
             # Distribution plot data for nanoplots
             if n_valid > 0:
+                distribution_data = []
                 try:
                     if distribution_plot == "histogram":
                         # Calculate optimal number of bins (max 12 for nanoplots)
                         n_bins = min(12, max(5, int(np.sqrt(n_valid))))
-                        
-                        # Get data range
-                        min_val = float(series_clean.min())
-                        max_val = float(series_clean.max())
-                        
+
+                        # Reuse the min/max already computed above for the range
                         # Create bin edges
                         if min_val == max_val:
                             # All values are the same
@@ -479,8 +482,11 @@ def xray(
                     uniformity_result = _test_uniformity(series_clean.to_numpy(), uniformity_test)
                     col_stats['Uniformity_Test'] = uniformity_result
             
-            # Outlier detection
-            n_outliers = _count_outliers(series_clean, outlier_method, outlier_bounds)
+            # Outlier detection (reuse already-computed quartiles for the iqr method)
+            n_outliers = _count_outliers(
+                series_clean, outlier_method, outlier_bounds,
+                q25=quantile_stats.get('25%'), q75=quantile_stats.get('75%'),
+            )
             pct_outliers = (n_outliers / n_valid * 100) if n_valid > 0 else 0
             col_stats['N_Outliers'] = n_outliers
             col_stats['Pct_Outliers'] = round(pct_outliers, 2)
@@ -562,10 +568,21 @@ def xray(
                     col_stats['Correlation'] = None
                     col_stats['Correlation_Plot'] = None
         
+        # Dominant-value share for quasi-constant detection. An exact mode share
+        # needs a value_counts pass, so only compute it for small/medium columns;
+        # very large columns fall back to the cardinality heuristic for speed.
+        mode_share = None
+        if n_valid > 0 and not is_large_dataset:
+            try:
+                mode_share = int(series_clean.value_counts().get_column("count").max()) / n_valid
+            except Exception:
+                mode_share = None
+
         # Calculate shakiness score
         shakiness_score = _calculate_shakiness_score(
-            col_stats, missing_threshold, constant_threshold, 
-            skew_threshold, kurtosis_threshold, outlier_threshold
+            col_stats, missing_threshold, constant_threshold,
+            skew_threshold, kurtosis_threshold, outlier_threshold,
+            mode_share=mode_share,
         )
         col_stats['Shakiness_Score'] = shakiness_score
         col_stats['Quality_Flag'] = "⚠ SHAKY" if shakiness_score >= shakiness_threshold else "✓ OK"
@@ -843,22 +860,30 @@ def _calculate_shakiness_score(
     constant_threshold: float,
     skew_threshold: float,
     kurtosis_threshold: float,
-    outlier_threshold: float
+    outlier_threshold: float,
+    mode_share: float | None = None,
 ) -> int:
     """Calculate shakiness score based on data quality indicators."""
     score = 0
-    
+
     # High missingness
     if col_stats.get('Pct_Missing', 0) > missing_threshold * 100:
         score += 1
-    
-    # Constant/quasi-constant
+
+    # Constant/quasi-constant: flag when a single value dominates the column.
     uniqueness_ratio = col_stats.get('Uniqueness_Ratio', 1)
     # Handle both exact and approximate N_Unique column names
     n_unique_val = col_stats.get('N_Unique', col_stats.get('N_Unique(approx)', 0))
     if uniqueness_ratio == 0 or n_unique_val == 1:
         score += 1
-    elif uniqueness_ratio < (1 - constant_threshold):  # Mode percentage > threshold
+    elif mode_share is not None:
+        # Exact dominant-value share: flag if the most common value covers at
+        # least `constant_threshold` (e.g. 0.99 = 99%) of the non-null values.
+        if mode_share >= constant_threshold:
+            score += 1
+    elif uniqueness_ratio < (1 - constant_threshold):
+        # Fallback heuristic when mode share is unavailable (very large columns
+        # using approximate cardinality).
         score += 1
     
     # ID-like (too many unique values)
@@ -975,8 +1000,8 @@ def _check_distribution_usability(stats: dict) -> set[str]:
     """Check for distribution-related flags using polarsight thresholds."""
     flags = set()
     
-    # Check outliers
-    outlier_pct = stats.get('Pct_Outliers', 0)
+    # Check outliers (None for non-numeric columns)
+    outlier_pct = stats.get('Pct_Outliers') or 0
     if outlier_pct > 10.0:  # Extreme outliers (>10%)
         flags.add("EO")
     
@@ -995,8 +1020,8 @@ def _check_distribution_usability(stats: dict) -> set[str]:
     if 'NON-NORMAL' in normality_test:  # Non-normal distribution
         flags.add("NN")
     
-    # Check zero values
-    zero_pct = stats.get('Pct_Zero', 0)
+    # Check zero values (None for non-numeric columns)
+    zero_pct = stats.get('Pct_Zero') or 0
     if zero_pct > 80.0:  # High zero values (>80%)
         flags.add("ZH")
     
@@ -1099,14 +1124,26 @@ def _evaluate_column_usability(
     }
 
 
-def _count_outliers(series: pl.Series, method: str, bounds: list[float] | None) -> int:
-    """Count outliers in a series using specified method."""
+def _count_outliers(
+    series: pl.Series,
+    method: str,
+    bounds: list[float] | None,
+    q25: float | None = None,
+    q75: float | None = None,
+) -> int:
+    """Count outliers in a series using specified method.
+
+    For the ``iqr`` method, precomputed ``q25``/``q75`` quartiles may be passed
+    in to avoid recalculating quantiles the caller already has.
+    """
     if len(series) == 0:
         return 0
-    
+
     if method == "iqr":
-        q25 = series.quantile(0.25)
-        q75 = series.quantile(0.75)
+        if q25 is None:
+            q25 = series.quantile(0.25)
+        if q75 is None:
+            q75 = series.quantile(0.75)
         iqr = q75 - q25
         lower_bound = q25 - 1.5 * iqr
         upper_bound = q75 + 1.5 * iqr

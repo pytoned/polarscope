@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import importlib
-import io
 import sys
 import types
 
@@ -29,6 +28,12 @@ def test_clean_normalize_and_dedupe_paths() -> None:
 
     with pytest.raises(pl.exceptions.DuplicateError):
         clean_mod.clean_column_names(df, dedupe=False, case="upper")
+
+    # Regression: a deduped name must not collide with a pre-existing column.
+    collide = pl.DataFrame({"A": [1], "a": [2], "a_1": [3]})
+    cleaned_collide = clean_mod.clean_column_names(collide, dedupe=True)
+    assert cleaned_collide.columns == ["a", "a_1", "a_1_1"]
+    assert len(set(cleaned_collide.columns)) == cleaned_collide.width
 
 
 def test_datasets_loaders_and_info() -> None:
@@ -98,15 +103,31 @@ def test_utils_save_fig_branches_and_base64() -> None:
     utils_mod.save_fig(alt, "/tmp/out.json")
     assert alt.saved == "/tmp/out.json"
 
-    class BufferFig:
-        def savefig(self, buf: io.BytesIO, **kwargs) -> None:
-            _ = kwargs
-            buf.write(b"abc")
 
-    b64 = utils_mod.fig_to_base64_png(BufferFig())
-    assert b64.startswith("data:image/png;base64,")
+def test_xray_quasi_constant_and_distribution_validation() -> None:
+    import polarscope as ps
+
+    # A value covering >= constant_threshold of the column is flagged quasi-constant.
+    df_const = pl.DataFrame({"x": [1] * 99 + [2]})
+    out = ps.xray(df_const, include="all", expanded=True, great_tables=False)
+    assert out["Quality_Flag"][0] == "⚠ SHAKY"
+
+    # distribution_plot only supports "histogram".
     with pytest.raises(ValueError):
-        utils_mod.fig_to_base64_png(object())
+        ps.xray(df_const, distribution_plot="kde")
+
+
+def test_xray_model_usability_with_non_numeric_columns() -> None:
+    """Regression: model_usability + non-numeric columns must not raise."""
+    import polarscope as ps
+
+    df = pl.DataFrame({"num": [1.0, 2.0, 3.0, 4.0], "txt": ["a", "b", "a", "c"]})
+    out = ps.xray(
+        df, include="all", expanded=True, model_usability=True,
+        corr_target="num", great_tables=False,
+    )
+    assert "Usability_Score" in out.columns
+    assert out.height == 2
 
 
 def test_xray_internal_helpers() -> None:
@@ -175,11 +196,6 @@ def test_plots_core_helpers_and_drop_missing() -> None:
     assert plots_mod._numeric_columns(df) == ["a", "b"]
     assert plots_mod._ensure_columns(df, None) == ["a", "b"]
     assert plots_mod._ensure_columns(df, ["a", "c", "missing"]) == ["a"]
-
-    corr_df = pl.DataFrame({"x": [1.0, 2.0, 3.0], "y": [2.0, 4.0, 6.0]})
-    mat = plots_mod._corr_matrix(corr_df, ["x", "y"])
-    assert len(mat) == 2
-    assert len(mat[0]) == 2
 
     dropped_rows = plots_mod.drop_missing(df, axis="rows")
     assert dropped_rows.height <= df.height

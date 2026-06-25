@@ -26,18 +26,24 @@ def clean_column_names(
 ) -> pl.DataFrame:
     old = list(df.columns)
     seen: dict[str, int] = {}
+    used: set[str] = set()
     new: list[str] = []
     for name in old:
         base = _normalize(str(name), case=case, ascii_only=ascii_only)
         if not base:
             base = "col"
         if dedupe:
-            if base not in seen:
-                seen[base] = 0
-                new_name = base
-            else:
-                seen[base] += 1
-                new_name = f"{base}_{seen[base]}"
+            # Find the next free name, skipping any candidate that would collide
+            # with an already-assigned name (including pre-existing real columns
+            # such as a literal "base_1" elsewhere in the frame).
+            candidate = base
+            counter = seen.get(base, 0)
+            while candidate in used:
+                counter += 1
+                candidate = f"{base}_{counter}"
+            seen[base] = counter
+            used.add(candidate)
+            new_name = candidate
         else:
             new_name = base
         new.append(new_name)
