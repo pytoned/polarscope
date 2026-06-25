@@ -142,6 +142,41 @@ def test_xray_model_usability_with_non_numeric_columns() -> None:
     assert out.height == 2
 
 
+def test_normality_ks_fallback_for_large_samples() -> None:
+    if not xray_mod._check_scipy_availability():
+        pytest.skip("scipy not available")
+    data = np.random.default_rng(0).normal(size=6000)
+    result = xray_mod._test_normality(data, "shapiro")
+    assert "sample too large" not in result
+    assert "Kolmogorov-Smirnov" in result
+
+
+def test_string_stats_and_numeric_column_hiding() -> None:
+    import polarscope as ps
+
+    df = pl.DataFrame({"prov": ["a", "bb", "ccc", "a", "a"] * 20, "val": list(range(100))})
+
+    # Expanded string view exposes the richer string stats...
+    out = ps.xray(df, include="string", expanded=True, great_tables=False)
+    for col in ["Min_Length", "Median_Length", "Max_Length", "Mode_Share", "Top_3", "Sample_Vals"]:
+        assert col in out.columns
+    # ...and drops numeric-only stats entirely when no numeric column is analyzed.
+    for col in ["Mean", "std", "skew", "N_Outliers", "Normality_Test", "25%"]:
+        assert col not in out.columns
+
+    # Minimal string view shows length defaults but not the expanded-only extras.
+    minimal = ps.xray(df, include="string", great_tables=False)
+    assert {"Min_Length", "Median_Length", "Max_Length"} <= set(minimal.columns)
+    assert "Mode_Share" not in minimal.columns
+    assert "Top_3" not in minimal.columns
+
+    # A row's stats are correct.
+    prov = out.filter(pl.col("Column") == "prov")
+    assert prov["Min_Length"][0] == 1
+    assert prov["Max_Length"][0] == 3
+    assert prov["Mode_Share"][0] == 60.0  # "a" appears 60 of 100
+
+
 def test_xray_internal_helpers() -> None:
     df = pl.DataFrame(
         {

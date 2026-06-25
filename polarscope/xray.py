@@ -144,8 +144,13 @@ def xray(
         Polars DataFrame output (False).
     expanded : bool, default False
         If True, shows all available statistics. If False, shows only essential
-        metrics: dtype, count, null_count, mean, std, min, 25%, 50%, 75%, max, 
+        metrics: dtype, count, null_count, mean, std, min, 25%, 50%, 75%, max,
         iqr, pct_missing, n_outliers, skew.
+        For string/categorical columns the essential view also includes the top
+        value, its frequency, and the min/median/avg/max value length; the
+        expanded view adds the mode share %, the top-3 values, and a sample of
+        distinct values. Numeric-only statistics are omitted entirely when none
+        of the analyzed columns are numeric (e.g. include='string').
     title : str | None, optional
         Custom title for the Great Tables output. If None, uses default titles:
         "🔬 DataFrame X-ray" (minimal) or "🔬 Expanded Statistics" (expanded).
@@ -508,9 +513,8 @@ def xray(
                         col_stats['Correlation_Plot'] = None
 
             # String-specific columns are N/A for numeric columns
-            col_stats['Top'] = None
-            col_stats['Top_Freq'] = None
-            col_stats['Avg_Length'] = None
+            for stat in _STRING_ALL_COLS:
+                col_stats[stat] = None
 
         else:
             # ── Non-numeric columns ──────────────────────────────────────
@@ -524,18 +528,36 @@ def xray(
                 value_counts = series_clean.value_counts().sort('count', descending=True)
                 val_col = value_counts.columns[0]
                 cnt_col = value_counts.columns[1]
-                top_val = str(value_counts[val_col][0])
-                col_stats['Top'] = top_val if len(top_val) <= 30 else top_val[:27] + "..."
-                col_stats['Top_Freq'] = int(value_counts[cnt_col][0])
+                vc_height = value_counts.height
+                top_freq = int(value_counts[cnt_col][0])
+
+                # Defaults: top value + length spread
+                col_stats['Top'] = _truncate(value_counts[val_col][0])
+                col_stats['Top_Freq'] = top_freq
+                col_stats['Min_Length'] = int(lengths.min())
+                col_stats['Median_Length'] = round(float(lengths.median()), 1)
                 col_stats['Avg_Length'] = round(float(lengths.mean()), 1)
+                col_stats['Max_Length'] = int(lengths.max())
+
+                # Expanded: dominant-category share, top-3, and a spread sample
+                col_stats['Mode_Share'] = round(top_freq / n_valid * 100, 1)
+                col_stats['Top_3'] = ", ".join(
+                    f"{_truncate(value_counts[val_col][i], 20)} ({int(value_counts[cnt_col][i])})"
+                    for i in range(min(3, vc_height))
+                )
+                # Sample of distinct values spread across the frequency range
+                # (most common / mid / rarest) - meaningful at any cardinality.
+                sample_idx = sorted({0, vc_height // 2, vc_height - 1})[:3]
+                col_stats['Sample_Vals'] = ", ".join(
+                    _truncate(value_counts[val_col][i], 20) for i in sample_idx
+                )
 
                 # Distribution plot - top category frequencies as bar chart
-                n_bars = min(12, value_counts.height)
+                n_bars = min(12, vc_height)
                 col_stats['Distribution_Plot'] = value_counts[cnt_col][:n_bars].to_list()
             else:
-                col_stats['Top'] = None
-                col_stats['Top_Freq'] = None
-                col_stats['Avg_Length'] = None
+                for stat in _STRING_ALL_COLS:
+                    col_stats[stat] = None
                 col_stats['Distribution_Plot'] = []
 
             # Numeric-only statistics are N/A for non-numeric columns
@@ -601,37 +623,56 @@ def xray(
     
     # Create DataFrame
     summary_df = pl.DataFrame(stats_data)
-    
+
+    # Percentile labels (numeric-only columns)
+    percentile_labels = [_percentile_to_label(p) for p in percentiles]
+
+    # When no analyzed column is numeric (e.g. include='string', or a frame with
+    # no numeric columns), the numeric-only stats are all empty - drop them so
+    # the table isn't padded with columns of None.
+    has_numeric = any(schema[c].is_numeric() for c in all_cols)
+    numeric_only_cols = (
+        ['Mean', 'std', 'Min', 'Max', 'IQR', 'skew', 'Kurtosis', 'MAD',
+         'N_Zero', 'Pct_Zero', 'Pct_Pos', 'Pct_Neg', 'N_Outliers', 'Pct_Outliers',
+         'Normality_Test', 'Uniformity_Test', 'Correlation', 'Correlation_Plot']
+        + percentile_labels
+    )
+
     # Apply column filtering based on expanded mode
     if expanded:
-        final_df = summary_df
+        if has_numeric:
+            final_df = summary_df
+        else:
+            final_df = summary_df.drop([c for c in numeric_only_cols if c in summary_df.columns])
     else:
         # Minimal mode - only essential columns (percentile labels generated dynamically)
-        percentile_labels = [_percentile_to_label(p) for p in percentiles]
-        essential_cols = (['Column', 'Dtype', 'Count', 'null_count', 'Mean', 'std', 'Min']
-                         + percentile_labels
-                         + ['Max', 'IQR', 'Pct_Missing', 'N_Outliers', 'skew'])
-        
+        essential_cols = ['Column', 'Dtype', 'Count', 'null_count']
+        if has_numeric:
+            essential_cols += ['Mean', 'std', 'Min'] + percentile_labels + ['Max', 'IQR']
+        essential_cols += ['Pct_Missing']
+        if has_numeric:
+            essential_cols += ['N_Outliers', 'skew']
+
         # Add string-specific columns only when string columns are present
-        string_stat_cols = ['Top', 'Top_Freq', 'Avg_Length']
+        string_stat_cols = list(_STRING_DEFAULT_COLS)
         has_string_data = any(
             c in summary_df.columns and summary_df[c].null_count() < len(summary_df)
             for c in string_stat_cols
         )
         if has_string_data:
             essential_cols.extend(string_stat_cols)
-        
+
         essential_cols.append('Distribution_Plot')
-        
+
         # Only include the essential columns that exist in the dataframe
         available_cols = [c for c in essential_cols if c in summary_df.columns]
-        
+
         # Add correlation at the very end if specified
         if corr_target and 'Correlation' in summary_df.columns:
             available_cols.append('Correlation')
         if corr_target and 'Correlation_Plot' in summary_df.columns:
             available_cols.append('Correlation_Plot')
-        
+
         final_df = summary_df.select(available_cols)
 
     # Return standard DataFrame if great_tables=False
@@ -662,6 +703,19 @@ def _percentile_to_label(p: float) -> str:
         return "50%"  # Keep 50% instead of "Median" for consistency
     else:
         return f"{int(p*100)}%"
+
+
+# String stat column names, kept consistent across all column types so the
+# summary DataFrame has a stable schema regardless of dtypes present.
+_STRING_DEFAULT_COLS = ['Top', 'Top_Freq', 'Min_Length', 'Median_Length', 'Avg_Length', 'Max_Length']
+_STRING_EXPANDED_COLS = ['Mode_Share', 'Top_3', 'Sample_Vals']
+_STRING_ALL_COLS = _STRING_DEFAULT_COLS + _STRING_EXPANDED_COLS
+
+
+def _truncate(value: object, limit: int = 30) -> str:
+    """Stringify and truncate a value with an ellipsis for table display."""
+    s = str(value)
+    return s if len(s) <= limit else s[: limit - 3] + "..."
 
 
 def _calculate_quantiles(series: pl.Series, percentiles: list[float]) -> dict:
@@ -775,10 +829,13 @@ def _test_normality(data: np.ndarray, test_type: str) -> str:
     try:
         if test_type == "shapiro":
             if len(data) > 5000:
-                # Shapiro-Wilk test not reliable for large samples
-                return "N/A (sample too large)"
-            stat, p_value = stats.shapiro(data)
-            test_name = "Shapiro-Wilk"
+                # Shapiro-Wilk is unreliable for large samples, so fall back to
+                # the KS (Lilliefors) test instead of skipping normality entirely.
+                stat, p_value = stats.kstest(data, 'norm', args=(np.mean(data), np.std(data)))
+                test_name = "Kolmogorov-Smirnov (n>5000)"
+            else:
+                stat, p_value = stats.shapiro(data)
+                test_name = "Shapiro-Wilk"
             
         elif test_type == "anderson":
             result = stats.anderson(data, dist='norm')
@@ -1234,7 +1291,7 @@ def _build_minimal_gt_table(
     )
     basic_cols = ["Dtype", "Count", "null_count", "Mean", "std", "Min"] + pct_cols + ["Max"]
     essential_cols = ["IQR", "Pct_Missing", "N_Outliers", "skew"]
-    string_cols = ["Top", "Top_Freq", "Avg_Length"]
+    string_cols = list(_STRING_DEFAULT_COLS)
     plot_cols = ["Distribution_Plot"]
     quality_cols = []
     
@@ -1273,26 +1330,28 @@ def _build_minimal_gt_table(
         gt_table = gt_table.tab_spanner(label="Quality", columns=quality_cols)
     
     # Format integer columns (filter to those that actually exist)
-    int_cols = [c for c in ["Count", "null_count", "N_Outliers", "Top_Freq"] if c in summary_df.columns]
+    int_cols = [c for c in ["Count", "null_count", "N_Outliers", "Top_Freq", "Min_Length", "Max_Length"]
+                if c in summary_df.columns]
     num_cols = [c for c in ["Mean", "std", "Min"] + pct_cols + ["Max", "IQR", "skew"] if c in summary_df.columns]
-    
+
     gt_table = (
         gt_table
         .fmt_integer(columns=int_cols, sep_mark=sep_mark)
         .fmt_number(
-            columns=num_cols, 
-            decimals=decimals, 
-            sep_mark=sep_mark, 
+            columns=num_cols,
+            decimals=decimals,
+            sep_mark=sep_mark,
             dec_mark=dec_mark,
             compact=compact,
             **({"pattern": pattern} if pattern is not None else {})
         )
         .fmt_number(columns=["Pct_Missing"], decimals=1, sep_mark=sep_mark, dec_mark=dec_mark)
     )
-    
-    # Format string-specific columns
-    if "Avg_Length" in summary_df.columns and "Avg_Length" in string_cols:
-        gt_table = gt_table.fmt_number(columns=["Avg_Length"], decimals=1, sep_mark=sep_mark, dec_mark=dec_mark)
+
+    # Format string length columns (one decimal place)
+    length_num_cols = [c for c in ["Avg_Length", "Median_Length"] if c in string_cols]
+    if length_num_cols:
+        gt_table = gt_table.fmt_number(columns=length_num_cols, decimals=1, sep_mark=sep_mark, dec_mark=dec_mark)
     
     # Alignment
     center_cols = [str(c) for c in (basic_cols + essential_cols + [c for c in string_cols if c != "Top"] + quality_cols)]
@@ -1398,7 +1457,7 @@ def _build_expanded_gt_table(
     distribution_cols = ["IQR", "skew", "Kurtosis", "MAD", "Distribution_Plot"]
     count_cols = ["null_count", "Pct_Missing"] + n_unique_cols + ["Uniqueness_Ratio", "N_Duplicates", "Pct_Duplicates", "N_Zero", "Pct_Zero", "Pct_Pos", "Pct_Neg"]
     outlier_cols = ["N_Outliers", "Pct_Outliers"]
-    string_stat_cols = ["Top", "Top_Freq", "Avg_Length"]
+    string_stat_cols = list(_STRING_ALL_COLS)
     test_cols = ["Normality_Test", "Uniformity_Test"]
     quality_cols = ["Opt_Dtype", "Shakiness_Score", "Quality_Flag"]
     if model_usability:
@@ -1449,7 +1508,7 @@ def _build_expanded_gt_table(
         gt_table = gt_table.tab_spanner(label="Quality Assessment", columns=quality_cols)
     
     # Build format column lists (only include columns that exist)
-    int_fmt_cols = [c for c in ["Count", "null_count"] + n_unique_cols + ["N_Duplicates", "N_Zero", "N_Outliers", "Top_Freq", "Shakiness_Score"] + (["Usability_Score"] if model_usability and "Usability_Score" in summary_df.columns else []) if c in summary_df.columns]
+    int_fmt_cols = [c for c in ["Count", "null_count"] + n_unique_cols + ["N_Duplicates", "N_Zero", "N_Outliers", "Top_Freq", "Min_Length", "Max_Length", "Shakiness_Score"] + (["Usability_Score"] if model_usability and "Usability_Score" in summary_df.columns else []) if c in summary_df.columns]
     num_fmt_cols = [c for c in ["Mean", "std", "Min", "Max", "IQR", "MAD"] + quantile_cols if c in summary_df.columns]
     
     gt_table = (
@@ -1468,13 +1527,15 @@ def _build_expanded_gt_table(
         .fmt_number(columns=[c for c in ["Uniqueness_Ratio"] if c in summary_df.columns], decimals=4, sep_mark=sep_mark, dec_mark=dec_mark)
     )
     
-    # Format string-specific columns
-    if "Avg_Length" in summary_df.columns and "Avg_Length" in string_stat_cols:
-        gt_table = gt_table.fmt_number(columns=["Avg_Length"], decimals=1, sep_mark=sep_mark, dec_mark=dec_mark)
-    
-    # Alignment
-    center_cols = [str(c) for c in (basic_cols + quantile_cols + distribution_cols + count_cols + outlier_cols + [c for c in string_stat_cols if c != "Top"] + ["Shakiness_Score"] + (["Usability_Score"] if model_usability and "Usability_Score" in summary_df.columns else []))]
-    left_cols = [str(c) for c in (["Column", "Opt_Dtype", "Quality_Flag"] + ([c for c in ["Top"] if c in string_stat_cols]) + (["Usability_Flags", "Recommendation"] if model_usability else []) + test_cols)]
+    # Format string-specific columns (lengths + mode share to one decimal)
+    string_num_cols = [c for c in ["Avg_Length", "Median_Length", "Mode_Share"] if c in string_stat_cols]
+    if string_num_cols:
+        gt_table = gt_table.fmt_number(columns=string_num_cols, decimals=1, sep_mark=sep_mark, dec_mark=dec_mark)
+
+    # Alignment - free-text string columns are left-aligned, the rest centered
+    text_string_cols = {"Top", "Top_3", "Sample_Vals"}
+    center_cols = [str(c) for c in (basic_cols + quantile_cols + distribution_cols + count_cols + outlier_cols + [c for c in string_stat_cols if c not in text_string_cols] + ["Shakiness_Score"] + (["Usability_Score"] if model_usability and "Usability_Score" in summary_df.columns else []))]
+    left_cols = [str(c) for c in (["Column", "Opt_Dtype", "Quality_Flag"] + [c for c in string_stat_cols if c in text_string_cols] + (["Usability_Flags", "Recommendation"] if model_usability else []) + test_cols)]
     
     gt_table = (
         gt_table
