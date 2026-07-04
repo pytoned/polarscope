@@ -51,17 +51,22 @@ def _format_memory_usage(df: pl.DataFrame) -> str:
             return "Unknown"
 
 
+def _is_stringy(dt) -> bool:
+    """True for dtypes analyzed with string statistics (String/Categorical/Enum)."""
+    return dt in (pl.String, pl.Utf8) or isinstance(dt, (pl.Categorical, pl.Enum))
+
+
 def _get_columns_to_analyze(df: pl.DataFrame, include: str | list[str] | None) -> list[str]:
     """
     Filter columns based on include parameter.
-    
+
     Parameters
     ----------
     df : pl.DataFrame
         The DataFrame to analyze
     include : str, list[str], or None
         Which data types to include
-        
+
     Returns
     -------
     list[str]
@@ -70,14 +75,14 @@ def _get_columns_to_analyze(df: pl.DataFrame, include: str | list[str] | None) -
     if include is None or include == 'numeric':
         # Default behavior: only numeric columns
         return [c for c, dt in zip(df.columns, df.dtypes) if dt.is_numeric()]
-    
+
     elif include == 'all':
         # Include all columns
         return df.columns
-    
+
     elif include == 'string':
-        # Only string/text columns
-        return [c for c, dt in zip(df.columns, df.dtypes) if dt in (pl.String, pl.Utf8)]
+        # String-like columns (String, Categorical, Enum)
+        return [c for c, dt in zip(df.columns, df.dtypes) if _is_stringy(dt)]
     
     elif include == 'temporal':
         # Only date/datetime columns
@@ -136,9 +141,12 @@ def xray(
         - None (default): Only numeric columns (Int8, Int16, Int32, Int64, Float32, Float64)
         - 'all': All columns regardless of data type
         - 'numeric': Only numeric columns (same as None)
-        - 'string': Only string/text columns
+        - 'string': String-like columns (String, Categorical, Enum)
         - 'temporal': Only date/datetime columns
         - list of strings: Specific data type names (e.g., ['Float64', 'String'])
+        Boolean columns are analyzed as 0/1 numerics (Mean = share of True);
+        temporal columns report their earliest/latest timestamps.
+        Raises ValueError when no columns match the selection.
     great_tables : bool, default True
         Whether to return a formatted Great Tables object (True) or standard
         Polars DataFrame output (False).
@@ -192,7 +200,8 @@ def xray(
         Minimum score to flag column as "shaky" for parametric models.
     model_usability : bool, default False
         Include sophisticated model usability scoring with weighted flags and recommendations.
-        Adds columns: Usability_Flags, Usability_Score, Recommendation.
+        Adds columns: Usability_Flags, Usability_Score, Recommendation
+        (in both minimal and expanded mode).
     distribution_plot : str, default "histogram"
         Type of distribution visualization for numeric columns:
         - "histogram": Bar-based histogram (default) without markers
@@ -343,21 +352,51 @@ def xray(
     
     # Filter columns based on include parameter
     all_cols = _get_columns_to_analyze(df, include)
-    
+    if not all_cols:
+        if include is None or include == 'numeric':
+            raise ValueError(
+                "No numeric columns found to analyze. "
+                "Pass include='all' to analyze all column types, or include='string' for string columns."
+            )
+        raise ValueError(f"No columns matched include={include!r} in this DataFrame.")
+
     # Calculate comprehensive statistics for all columns
     stats_data = []
-    
+
     schema = df.schema
+
+    # Batch all target correlations in a single pass instead of one query per column
+    corr_map: dict[str, float | None] = {}
+    if corr_target:
+        corr_exprs = []
+        for c in all_cols:
+            if c == corr_target:
+                continue
+            if schema[c].is_numeric():
+                corr_exprs.append(pl.corr(corr_target, c).alias(c))
+            elif schema[c] == pl.Boolean:
+                corr_exprs.append(pl.corr(pl.col(corr_target), pl.col(c).cast(pl.UInt8)).alias(c))
+        if corr_exprs:
+            try:
+                corr_row = df.select(corr_exprs)
+                corr_map = {c: corr_row[c][0] for c in corr_row.columns}
+            except Exception:
+                corr_map = {}
+
     for col in all_cols:
         dtype = schema[col]
-        is_numeric = dtype.is_numeric()
+        is_bool = dtype == pl.Boolean
+        # Booleans are analyzed as 0/1 numerics (Mean = share of True, etc.)
+        is_numeric = dtype.is_numeric() or is_bool
         series = df[col]
         series_clean = series.drop_nulls()
+        if is_bool:
+            series_clean = series_clean.cast(pl.UInt8)
         n_total = len(series)
         n_valid = len(series_clean)
         n_missing = series.null_count()
         pct_missing = (n_missing / n_total * 100) if n_total > 0 else 0
-        
+
         # Initialize column stats
         col_stats = {
             'Column': col,
@@ -366,30 +405,35 @@ def xray(
             'null_count': n_missing,
             'Pct_Missing': round(pct_missing, 2)
         }
-        
-        # Basic counts and ratios - use approx for large datasets
-        is_large_dataset = len(series) > 300000
+
+        # Basic counts and ratios (nulls excluded) - use approx for large datasets
+        is_large_dataset = n_total > 300000
         try:
             # Use approximate count for large datasets (>300k rows) for better performance
             if is_large_dataset:
-                n_unique = series.approx_n_unique()
+                n_unique = series_clean.approx_n_unique()
             else:
-                n_unique = series.n_unique()
+                n_unique = series_clean.n_unique()
         except Exception:
             # Fallback - count via groupby (more reliable for problematic dtypes)
-            n_unique = series.drop_nulls().value_counts().height
-        
+            n_unique = series_clean.value_counts().height
+
         # Use appropriate column name based on dataset size
         n_unique_col = 'N_Unique(approx)' if is_large_dataset else 'N_Unique'
         col_stats[n_unique_col] = n_unique
-        col_stats['Uniqueness_Ratio'] = round(n_unique / n_total, 4) if n_total > 0 else 0
-        
-        # Duplicate analysis for historized datasets
-        n_duplicates = n_total - n_unique
-        pct_duplicates = round((n_duplicates / n_total * 100), 2) if n_total > 0 else 0
+        col_stats['Uniqueness_Ratio'] = round(n_unique / n_valid, 4) if n_valid > 0 else 0
+
+        # Duplicate analysis for historized datasets (among non-null values;
+        # clamped because approx_n_unique may slightly overestimate)
+        n_duplicates = max(0, n_valid - n_unique)
+        pct_duplicates = round((n_duplicates / n_valid * 100), 2) if n_valid > 0 else 0
         col_stats['N_Duplicates'] = n_duplicates
         col_stats['Pct_Duplicates'] = pct_duplicates
-        
+
+        # Dominant-value share (set exactly by the string branch; computed for
+        # small/medium columns otherwise) - feeds quasi-constant detection.
+        mode_share = None
+
         if is_numeric and n_valid > 0:
             # Numeric-specific statistics
             
@@ -470,11 +514,11 @@ def xray(
                     mad = (series_clean - median_val).abs().median()
                     col_stats['MAD'] = round(float(mad), 3)
                 
-                # Kurtosis (expanded mode only)
+                # Kurtosis (expanded mode only) - Polars' native excess kurtosis
+                # (matches scipy.stats.kurtosis) instead of a slower numpy pass
                 if n_valid > 2:
-                    # Calculate kurtosis (excess kurtosis)
-                    kurt_val = _calculate_kurtosis(series_clean.to_numpy())
-                    col_stats['Kurtosis'] = round(kurt_val, 3)
+                    kurt_val = series_clean.kurtosis()
+                    col_stats['Kurtosis'] = round(float(kurt_val), 3) if kurt_val is not None else None
                 
                 # Optimal dtype suggestion
                 col_stats['Opt_Dtype'] = _suggest_optimal_dtype(series_clean, dtype)
@@ -496,32 +540,34 @@ def xray(
             col_stats['N_Outliers'] = n_outliers
             col_stats['Pct_Outliers'] = round(pct_outliers, 2)
             
-            # Correlation with target
+            # Correlation with target (precomputed in a single batched pass)
             if corr_target:
                 if col == corr_target:
                     col_stats['Correlation'] = '-'  # Target column shows '-' instead of None
                     col_stats['Correlation_Plot'] = None  # No plot for target column
                 else:
-                    try:
-                        corr_val = df.select([pl.corr(corr_target, col)]).item()
-                        col_stats['Correlation'] = round(corr_val, 3) if corr_val is not None else None
-                        # Create single value for horizontal bar nanoplot (fixed -1 to 1 scale)
-                        # Round to 3 decimal places for better performance and readability
-                        col_stats['Correlation_Plot'] = round(corr_val, 3) if corr_val is not None else 0.0
-                    except Exception:
-                        col_stats['Correlation'] = None
-                        col_stats['Correlation_Plot'] = None
+                    corr_val = corr_map.get(col)
+                    col_stats['Correlation'] = round(corr_val, 3) if corr_val is not None else None
+                    # Single value for horizontal bar nanoplot (fixed -1 to 1 scale)
+                    col_stats['Correlation_Plot'] = round(corr_val, 3) if corr_val is not None else None
 
-            # String-specific columns are N/A for numeric columns
-            for stat in _STRING_ALL_COLS:
+            # String/temporal-specific columns are N/A for numeric columns
+            for stat in _STRING_ALL_COLS + _TEMPORAL_COLS:
                 col_stats[stat] = None
 
         else:
             # ── Non-numeric columns ──────────────────────────────────────
-            is_string = dtype in (pl.String, pl.Utf8)
+            is_string = _is_stringy(dtype)
+            is_temporal = dtype.is_temporal()
+
+            # Temporal min/max are set by the temporal branch below
+            col_stats['Earliest'] = None
+            col_stats['Latest'] = None
 
             if is_string and n_valid > 0:
-                # String-specific statistics
+                # String-specific statistics (Categorical/Enum analyzed as strings)
+                if dtype not in (pl.String, pl.Utf8):
+                    series_clean = series_clean.cast(pl.String)
                 lengths = series_clean.str.len_chars()
 
                 # Top value (mode) and its frequency
@@ -540,7 +586,8 @@ def xray(
                 col_stats['Max_Length'] = int(lengths.max())
 
                 # Expanded: dominant-category share, top-3, and a spread sample
-                col_stats['Mode_Share'] = round(top_freq / n_valid * 100, 1)
+                mode_share = top_freq / n_valid  # reused for quasi-constant detection
+                col_stats['Mode_Share'] = round(mode_share * 100, 1)
                 col_stats['Top_3'] = ", ".join(
                     f"{_truncate(value_counts[val_col][i], 20)} ({int(value_counts[cnt_col][i])})"
                     for i in range(min(3, vc_height))
@@ -555,6 +602,13 @@ def xray(
                 # Distribution plot - top category frequencies as bar chart
                 n_bars = min(12, vc_height)
                 col_stats['Distribution_Plot'] = value_counts[cnt_col][:n_bars].to_list()
+            elif is_temporal and n_valid > 0:
+                # Temporal columns: earliest/latest timestamps
+                col_stats['Earliest'] = str(series_clean.min())
+                col_stats['Latest'] = str(series_clean.max())
+                for stat in _STRING_ALL_COLS:
+                    col_stats[stat] = None
+                col_stats['Distribution_Plot'] = []
             else:
                 for stat in _STRING_ALL_COLS:
                     col_stats[stat] = None
@@ -590,11 +644,11 @@ def xray(
                     col_stats['Correlation'] = None
                     col_stats['Correlation_Plot'] = None
         
-        # Dominant-value share for quasi-constant detection. An exact mode share
-        # needs a value_counts pass, so only compute it for small/medium columns;
-        # very large columns fall back to the cardinality heuristic for speed.
-        mode_share = None
-        if n_valid > 0 and not is_large_dataset:
+        # Dominant-value share for quasi-constant detection. The string branch
+        # sets it from its value_counts; otherwise it needs its own pass, so only
+        # compute it for small/medium columns - very large columns fall back to
+        # the cardinality heuristic for speed.
+        if mode_share is None and n_valid > 0 and not is_large_dataset:
             try:
                 mode_share = int(series_clean.value_counts().get_column("count").max()) / n_valid
             except Exception:
@@ -629,8 +683,9 @@ def xray(
 
     # When no analyzed column is numeric (e.g. include='string', or a frame with
     # no numeric columns), the numeric-only stats are all empty - drop them so
-    # the table isn't padded with columns of None.
-    has_numeric = any(schema[c].is_numeric() for c in all_cols)
+    # the table isn't padded with columns of None. Booleans count as numeric
+    # since they are analyzed as 0/1.
+    has_numeric = any(schema[c].is_numeric() or schema[c] == pl.Boolean for c in all_cols)
     numeric_only_cols = (
         ['Mean', 'std', 'Min', 'Max', 'IQR', 'skew', 'Kurtosis', 'MAD',
          'N_Zero', 'Pct_Zero', 'Pct_Pos', 'Pct_Neg', 'N_Outliers', 'Pct_Outliers',
@@ -662,6 +717,14 @@ def xray(
         if has_string_data:
             essential_cols.extend(string_stat_cols)
 
+        # Add temporal columns only when temporal columns are present
+        has_temporal_data = any(
+            c in summary_df.columns and summary_df[c].null_count() < len(summary_df)
+            for c in _TEMPORAL_COLS
+        )
+        if has_temporal_data:
+            essential_cols.extend(_TEMPORAL_COLS)
+
         essential_cols.append('Distribution_Plot')
 
         # Only include the essential columns that exist in the dataframe
@@ -672,6 +735,10 @@ def xray(
             available_cols.append('Correlation')
         if corr_target and 'Correlation_Plot' in summary_df.columns:
             available_cols.append('Correlation_Plot')
+
+        # Model usability columns are appended in minimal mode too when requested
+        if model_usability:
+            available_cols.extend(c for c in _USABILITY_COLS if c in summary_df.columns)
 
         final_df = summary_df.select(available_cols)
 
@@ -711,6 +778,12 @@ _STRING_DEFAULT_COLS = ['Top', 'Top_Freq', 'Min_Length', 'Median_Length', 'Avg_L
 _STRING_EXPANDED_COLS = ['Mode_Share', 'Top_3', 'Sample_Vals']
 _STRING_ALL_COLS = _STRING_DEFAULT_COLS + _STRING_EXPANDED_COLS
 
+# Temporal stat column names (earliest/latest timestamps)
+_TEMPORAL_COLS = ['Earliest', 'Latest']
+
+# Model usability column names (appended when model_usability=True)
+_USABILITY_COLS = ['Usability_Flags', 'Usability_Score', 'Recommendation']
+
 
 def _truncate(value: object, limit: int = 30) -> str:
     """Stringify and truncate a value with an ellipsis for table display."""
@@ -731,34 +804,17 @@ def _calculate_quantiles(series: pl.Series, percentiles: list[float]) -> dict:
     return quantile_stats
 
 
-def _calculate_kurtosis(data: np.ndarray) -> float:
-    """Calculate excess kurtosis (kurtosis - 3)."""
-    if len(data) < 4:
-        return np.nan
-    
-    mean = np.mean(data)
-    std = np.std(data, ddof=1)
-    
-    if std == 0:
-        return np.nan
-    
-    # Calculate fourth moment
-    fourth_moment = np.mean((data - mean) ** 4)
-    kurtosis = fourth_moment / (std ** 4)
-    
-    # Return excess kurtosis (subtract 3 for normal distribution)
-    return kurtosis - 3
-
-
 def _suggest_optimal_dtype(series: pl.Series, current_dtype) -> str:
     """Suggest optimal data type for a series."""
     if len(series) == 0:
         return str(current_dtype)
-    
-    # Check if boolean
-    unique_vals = set(series.unique().to_list())
-    if unique_vals.issubset({0, 1}) or unique_vals.issubset({True, False}):
-        return "Bool"
+
+    # Check if boolean - only materialize unique values when there are at most
+    # two of them (avoids building a Python set from high-cardinality columns)
+    if series.n_unique() <= 2:
+        unique_vals = set(series.unique().to_list())
+        if unique_vals.issubset({0, 1}) or unique_vals.issubset({True, False}):
+            return "Bool"
     
     if current_dtype.is_integer():
         try:
@@ -826,28 +882,35 @@ def _test_normality(data: np.ndarray, test_type: str) -> str:
     if len(data) < 3:
         return "N/A (insufficient data)"
     
+    # Exact KS p-values are expensive for large n and numerically identical to
+    # the asymptotic ones there, so switch method past 5000 samples.
+    ks_method = 'asymp' if len(data) > 5000 else 'auto'
+
     try:
         if test_type == "shapiro":
             if len(data) > 5000:
                 # Shapiro-Wilk is unreliable for large samples, so fall back to
                 # the KS (Lilliefors) test instead of skipping normality entirely.
-                stat, p_value = stats.kstest(data, 'norm', args=(np.mean(data), np.std(data)))
+                stat, p_value = stats.kstest(data, 'norm', args=(np.mean(data), np.std(data)), method=ks_method)
                 test_name = "Kolmogorov-Smirnov (n>5000)"
             else:
                 stat, p_value = stats.shapiro(data)
                 test_name = "Shapiro-Wilk"
-            
+
         elif test_type == "anderson":
             result = stats.anderson(data, dist='norm')
-            # Anderson-Darling uses critical values, not p-values
-            # Use 5% significance level (index 2 in critical_values)
-            is_normal = result.statistic < result.critical_values[2]
-            p_value = None  # A-D doesn't give exact p-value
+            # Anderson-Darling classically uses critical values (5% level =
+            # index 2); SciPy >= 1.19 removes them in favor of a p-value.
+            if getattr(result, 'critical_values', None) is not None:
+                is_normal = result.statistic < result.critical_values[2]
+            else:
+                is_normal = result.pvalue > 0.05
+            p_value = None  # not reported for A-D
             test_name = "Anderson-Darling"
-            
+
         elif test_type == "ks":
             # Lilliefors test (KS test with estimated parameters)
-            stat, p_value = stats.kstest(data, 'norm', args=(np.mean(data), np.std(data)))
+            stat, p_value = stats.kstest(data, 'norm', args=(np.mean(data), np.std(data)), method=ks_method)
             test_name = "Kolmogorov-Smirnov"
         
         # Format result
@@ -879,9 +942,10 @@ def _test_uniformity(data: np.ndarray, test_type: str) -> str:
             if min_val == max_val:
                 return "N/A (constant data)"
             
-            # Normalize to [0,1] for uniform test
+            # Normalize to [0,1] for uniform test (asymptotic p-value for large n)
             normalized = (data - min_val) / (max_val - min_val)
-            stat, p_value = stats.kstest(normalized, 'uniform')
+            ks_method = 'asymp' if len(data) > 5000 else 'auto'
+            stat, p_value = stats.kstest(normalized, 'uniform', method=ks_method)
             test_name = "KS"
             
         elif test_type == "chi2":
@@ -1264,6 +1328,68 @@ def _sanitize_nanoplot_column(
     return summary_df.with_columns(pl.Series(column, cleaned)), has_valid_payload
 
 
+def _apply_correlation_spanner(gt_table: GT, corr_target: str | None, summary_df: pl.DataFrame) -> GT:
+    """Add the correlation spanner/alignment shared by both table modes."""
+    if corr_target and "Correlation" in summary_df.columns:
+        gt_table = (
+            gt_table
+            .tab_spanner(label=f"Correlation with '{corr_target}'", columns=["Correlation"])
+            # Note: Skip fmt_number for Correlation since it contains both numbers and '-' string
+            .cols_align(align="center", columns=["Correlation"])
+        )
+    return gt_table
+
+
+def _apply_nanoplots(gt_table: GT, has_hist_data: bool, has_corr_data: bool, distribution_plot: str) -> GT:
+    """Apply histogram/correlation nanoplot formatting shared by both table modes."""
+    # Histogram nanoplots for the Distribution_Plot column
+    if has_hist_data:
+        try:
+            from great_tables import nanoplot_options
+            if distribution_plot == "histogram":
+                gt_table = gt_table.fmt_nanoplot(
+                    columns="Distribution_Plot",
+                    plot_type="bar",
+                    options=nanoplot_options(
+                        data_bar_stroke_width=0,  # No gaps between bars (like histogram)
+                        data_bar_fill_color="#4A90E2",
+                        show_data_line=False,
+                        show_data_area=False
+                    )
+                )
+        except ImportError:
+            # If nanoplot_options not available, use basic nanoplot
+            gt_table = gt_table.fmt_nanoplot(columns="Distribution_Plot", plot_type="bar")
+        except Exception:
+            # If nanoplot formatting fails, continue without it
+            pass
+
+    # Correlation nanoplots (horizontal bars with fixed -1 to 1 scale)
+    if has_corr_data:
+        try:
+            from great_tables import nanoplot_options
+            gt_table = gt_table.fmt_nanoplot(
+                columns="Correlation_Plot",
+                plot_type="bar",
+                expand_x=[-1, 1],  # Fixed scale from -1 to 1
+                options=nanoplot_options(
+                    data_bar_stroke_width=1,
+                    data_bar_fill_color="#4A90E2",
+                    data_bar_negative_fill_color="#E24A4A",  # Red for negative correlations
+                    show_data_line=False,
+                    show_data_area=False
+                )
+            )
+        except ImportError:
+            # If nanoplot_options not available, use basic nanoplot
+            gt_table = gt_table.fmt_nanoplot(columns="Correlation_Plot", plot_type="bar")
+        except Exception:
+            # If nanoplot formatting fails, continue without it
+            pass
+
+    return gt_table
+
+
 def _build_minimal_gt_table(
     summary_df: pl.DataFrame,
     n_rows: int,
@@ -1292,16 +1418,17 @@ def _build_minimal_gt_table(
     basic_cols = ["Dtype", "Count", "null_count", "Mean", "std", "Min"] + pct_cols + ["Max"]
     essential_cols = ["IQR", "Pct_Missing", "N_Outliers", "skew"]
     string_cols = list(_STRING_DEFAULT_COLS)
-    plot_cols = ["Distribution_Plot"]
-    quality_cols = []
-    
+    temporal_cols = list(_TEMPORAL_COLS)
+    quality_cols = list(_USABILITY_COLS) if model_usability else []
+
     # Filter to existing columns and ensure all are strings
     basic_cols = [str(c) for c in basic_cols if c in summary_df.columns]
     essential_cols = [str(c) for c in essential_cols if c in summary_df.columns]
-    # Only include string stats columns if there's at least one non-null value
+    # Only include string/temporal stats columns if there's at least one non-null value
     string_cols = [str(c) for c in string_cols
                    if c in summary_df.columns and summary_df[c].null_count() < len(summary_df)]
-    plot_cols = [str(c) for c in plot_cols if c in summary_df.columns]
+    temporal_cols = [str(c) for c in temporal_cols
+                     if c in summary_df.columns and summary_df[c].null_count() < len(summary_df)]
     quality_cols = [str(c) for c in quality_cols if c in summary_df.columns]
     
     try:
@@ -1326,11 +1453,13 @@ def _build_minimal_gt_table(
         gt_table = gt_table.tab_spanner(label="Key Metrics", columns=essential_cols)
     if string_cols:
         gt_table = gt_table.tab_spanner(label="String Statistics", columns=string_cols)
+    if temporal_cols:
+        gt_table = gt_table.tab_spanner(label="Temporal", columns=temporal_cols)
     if quality_cols:
-        gt_table = gt_table.tab_spanner(label="Quality", columns=quality_cols)
-    
+        gt_table = gt_table.tab_spanner(label="Quality Assessment", columns=quality_cols)
+
     # Format integer columns (filter to those that actually exist)
-    int_cols = [c for c in ["Count", "null_count", "N_Outliers", "Top_Freq", "Min_Length", "Max_Length"]
+    int_cols = [c for c in ["Count", "null_count", "N_Outliers", "Top_Freq", "Min_Length", "Max_Length", "Usability_Score"]
                 if c in summary_df.columns]
     num_cols = [c for c in ["Mean", "std", "Min"] + pct_cols + ["Max", "IQR", "skew"] if c in summary_df.columns]
 
@@ -1353,10 +1482,14 @@ def _build_minimal_gt_table(
     if length_num_cols:
         gt_table = gt_table.fmt_number(columns=length_num_cols, decimals=1, sep_mark=sep_mark, dec_mark=dec_mark)
     
-    # Alignment
-    center_cols = [str(c) for c in (basic_cols + essential_cols + [c for c in string_cols if c != "Top"] + quality_cols)]
-    left_cols = ["Column"] + ([c for c in ["Top"] if c in string_cols])
-    
+    # Alignment - free-text usability columns are left-aligned
+    center_cols = [str(c) for c in (basic_cols + essential_cols
+                                    + [c for c in string_cols if c != "Top"]
+                                    + temporal_cols
+                                    + [c for c in quality_cols if c == "Usability_Score"])]
+    left_cols = (["Column"] + [c for c in ["Top"] if c in string_cols]
+                 + [c for c in quality_cols if c != "Usability_Score"])
+
     gt_table = (
         gt_table
         .cols_align(align="center", columns=center_cols)
@@ -1367,62 +1500,10 @@ def _build_minimal_gt_table(
             column_labels_background_color="#e9ecef"
         )
     )
-    
-    # Add correlation if specified
-    if corr_target and "Correlation" in summary_df.columns:
-        gt_table = (
-            gt_table
-            .tab_spanner(label=f"Correlation with '{corr_target}'", columns=["Correlation"])
-            # Note: Skip fmt_number for Correlation since it contains both numbers and '-' string
-            .cols_align(align="center", columns=["Correlation"])
-        )
-    
-    # Add histogram nanoplots for numeric columns (if Histogram column exists)
-    if has_hist_data:
-        try:
-            from great_tables import nanoplot_options
-            if distribution_plot == "histogram":
-                gt_table = gt_table.fmt_nanoplot(
-                    columns="Distribution_Plot",
-                    plot_type="bar",
-                    options=nanoplot_options(
-                        data_bar_stroke_width=0,  # No gaps between bars (like histogram)
-                        data_bar_fill_color="#4A90E2",
-                        show_data_line=False,
-                        show_data_area=False
-                    )
-                )
-        except ImportError:
-            # If nanoplot_options not available, use basic nanoplot
-            plot_type = "bar"
-            gt_table = gt_table.fmt_nanoplot(columns="Distribution_Plot", plot_type=plot_type)
-        except Exception:
-            # If nanoplot formatting fails, continue without it
-            pass
-    
-    # Add correlation nanoplots (horizontal bars with fixed -1 to 1 scale)
-    if has_corr_data:
-        try:
-            from great_tables import nanoplot_options
-            gt_table = gt_table.fmt_nanoplot(
-                columns="Correlation_Plot",
-                plot_type="bar",
-                expand_x=[-1, 1],  # Fixed scale from -1 to 1
-                options=nanoplot_options(
-                    data_bar_stroke_width=1,
-                    data_bar_fill_color="#4A90E2",
-                    data_bar_negative_fill_color="#E24A4A",  # Red for negative correlations
-                    show_data_line=False,
-                    show_data_area=False
-                )
-            )
-        except ImportError:
-            # If nanoplot_options not available, use basic nanoplot
-            gt_table = gt_table.fmt_nanoplot(columns="Correlation_Plot", plot_type="bar")
-        except Exception:
-            # If nanoplot formatting fails, continue without it
-            pass
-    
+
+    gt_table = _apply_correlation_spanner(gt_table, corr_target, summary_df)
+    gt_table = _apply_nanoplots(gt_table, has_hist_data, has_corr_data, distribution_plot)
+
     return gt_table
 
 
@@ -1458,19 +1539,22 @@ def _build_expanded_gt_table(
     count_cols = ["null_count", "Pct_Missing"] + n_unique_cols + ["Uniqueness_Ratio", "N_Duplicates", "Pct_Duplicates", "N_Zero", "Pct_Zero", "Pct_Pos", "Pct_Neg"]
     outlier_cols = ["N_Outliers", "Pct_Outliers"]
     string_stat_cols = list(_STRING_ALL_COLS)
+    temporal_stat_cols = list(_TEMPORAL_COLS)
     test_cols = ["Normality_Test", "Uniformity_Test"]
     quality_cols = ["Opt_Dtype", "Shakiness_Score", "Quality_Flag"]
     if model_usability:
-        quality_cols.extend(["Usability_Flags", "Usability_Score", "Recommendation"])
-    
+        quality_cols.extend(_USABILITY_COLS)
+
     # Filter to existing columns and ensure all are strings
     basic_cols = [str(c) for c in basic_cols if c in summary_df.columns]
     distribution_cols = [str(c) for c in distribution_cols if c in summary_df.columns]
     count_cols = [str(c) for c in count_cols if c in summary_df.columns]
     outlier_cols = [str(c) for c in outlier_cols if c in summary_df.columns]
-    # Only include string stats columns if there's at least one non-null value
+    # Only include string/temporal stats columns if there's at least one non-null value
     string_stat_cols = [str(c) for c in string_stat_cols
                         if c in summary_df.columns and summary_df[c].null_count() < len(summary_df)]
+    temporal_stat_cols = [str(c) for c in temporal_stat_cols
+                          if c in summary_df.columns and summary_df[c].null_count() < len(summary_df)]
     test_cols = [str(c) for c in test_cols if c in summary_df.columns]
     quality_cols = [str(c) for c in quality_cols if c in summary_df.columns]
     
@@ -1502,6 +1586,8 @@ def _build_expanded_gt_table(
         gt_table = gt_table.tab_spanner(label="Outliers", columns=outlier_cols)
     if string_stat_cols:
         gt_table = gt_table.tab_spanner(label="String Statistics", columns=string_stat_cols)
+    if temporal_stat_cols:
+        gt_table = gt_table.tab_spanner(label="Temporal", columns=temporal_stat_cols)
     if test_cols:
         gt_table = gt_table.tab_spanner(label="Statistical Tests", columns=test_cols)
     if quality_cols:
@@ -1534,73 +1620,21 @@ def _build_expanded_gt_table(
 
     # Alignment - free-text string columns are left-aligned, the rest centered
     text_string_cols = {"Top", "Top_3", "Sample_Vals"}
-    center_cols = [str(c) for c in (basic_cols + quantile_cols + distribution_cols + count_cols + outlier_cols + [c for c in string_stat_cols if c not in text_string_cols] + ["Shakiness_Score"] + (["Usability_Score"] if model_usability and "Usability_Score" in summary_df.columns else []))]
+    center_cols = [str(c) for c in (basic_cols + quantile_cols + distribution_cols + count_cols + outlier_cols + [c for c in string_stat_cols if c not in text_string_cols] + temporal_stat_cols + ["Shakiness_Score"] + (["Usability_Score"] if model_usability and "Usability_Score" in summary_df.columns else []))]
     left_cols = [str(c) for c in (["Column", "Opt_Dtype", "Quality_Flag"] + [c for c in string_stat_cols if c in text_string_cols] + (["Usability_Flags", "Recommendation"] if model_usability else []) + test_cols)]
-    
+
     gt_table = (
         gt_table
         .cols_align(align="center", columns=center_cols)
         .cols_align(align="left", columns=left_cols)
         .tab_options(
             table_font_size="12px",
-            heading_background_color="#f8f9fa", 
+            heading_background_color="#f8f9fa",
             column_labels_background_color="#e9ecef"
         )
     )
-    
-    # Add correlation if specified
-    if corr_target and "Correlation" in summary_df.columns:
-        gt_table = (
-            gt_table
-            .tab_spanner(label=f"Correlation with '{corr_target}'", columns=["Correlation"])
-            # Note: Skip fmt_number for Correlation since it contains both numbers and '-' string
-            .cols_align(align="center", columns=["Correlation"])
-        )
-    
-    # Add histogram nanoplots for numeric columns (if Histogram column exists)
-    if has_hist_data:
-        try:
-            from great_tables import nanoplot_options
-            if distribution_plot == "histogram":
-                gt_table = gt_table.fmt_nanoplot(
-                    columns="Distribution_Plot",
-                    plot_type="bar",
-                    options=nanoplot_options(
-                        data_bar_stroke_width=0,  # No gaps between bars (like histogram)
-                        data_bar_fill_color="#4A90E2",
-                        show_data_line=False,
-                        show_data_area=False
-                    )
-                )
-        except ImportError:
-            # If nanoplot_options not available, use basic nanoplot
-            plot_type = "bar"
-            gt_table = gt_table.fmt_nanoplot(columns="Distribution_Plot", plot_type=plot_type)
-        except Exception:
-            # If nanoplot formatting fails, continue without it
-            pass
-    
-    # Add correlation nanoplots (horizontal bars with fixed -1 to 1 scale)
-    if has_corr_data:
-        try:
-            from great_tables import nanoplot_options
-            gt_table = gt_table.fmt_nanoplot(
-                columns="Correlation_Plot",
-                plot_type="bar",
-                expand_x=[-1, 1],  # Fixed scale from -1 to 1
-                options=nanoplot_options(
-                    data_bar_stroke_width=1,
-                    data_bar_fill_color="#4A90E2",
-                    data_bar_negative_fill_color="#E24A4A",  # Red for negative correlations
-                    show_data_line=False,
-                    show_data_area=False
-                )
-            )
-        except ImportError:
-            # If nanoplot_options not available, use basic nanoplot
-            gt_table = gt_table.fmt_nanoplot(columns="Correlation_Plot", plot_type="bar")
-        except Exception:
-            # If nanoplot formatting fails, continue without it
-            pass
-    
+
+    gt_table = _apply_correlation_spanner(gt_table, corr_target, summary_df)
+    gt_table = _apply_nanoplots(gt_table, has_hist_data, has_corr_data, distribution_plot)
+
     return gt_table

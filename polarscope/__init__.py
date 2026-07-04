@@ -28,7 +28,7 @@ __all__ = [
     "utils",                # Utility functions module
     "xray",                 # Main data inspection function
 ]
-__version__ = "1.7.0"
+__version__ = "1.8.0"
 
 # Package metadata
 __title__ = "polarscope"

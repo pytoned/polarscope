@@ -142,6 +142,77 @@ def test_xray_model_usability_with_non_numeric_columns() -> None:
     assert out.height == 2
 
 
+def test_xray_raises_on_no_matching_columns() -> None:
+    """Regression: default include on a string-only frame must raise clearly."""
+    import polarscope as ps
+
+    df = pl.DataFrame({"a": ["x", "y"], "b": ["u", "v"]})
+    with pytest.raises(ValueError, match="include='all'"):
+        ps.xray(df)
+    with pytest.raises(ValueError, match="No columns matched"):
+        ps.xray(df, include="temporal")
+    with pytest.raises(ValueError):
+        ps.xray(pl.DataFrame())
+
+
+def test_xray_usability_columns_in_minimal_mode() -> None:
+    """model_usability=True appends its columns in minimal mode too."""
+    import polarscope as ps
+
+    df = pl.DataFrame({"num": [1.0, 2.0, 3.0, 4.0], "txt": ["a", "b", "a", "c"]})
+    out = ps.xray(df, include="all", model_usability=True, great_tables=False)
+    for col in ["Usability_Flags", "Usability_Score", "Recommendation"]:
+        assert col in out.columns
+    # GT rendering with usability columns in minimal mode must not raise
+    ps.xray(df, include="all", model_usability=True)
+
+
+def test_xray_categorical_boolean_temporal_coverage() -> None:
+    """Categorical/Enum get string stats; Boolean gets 0/1 numeric stats; temporal gets min/max."""
+    import polarscope as ps
+
+    df = pl.DataFrame({
+        "cat": pl.Series(["a", "b", "a", "a"], dtype=pl.Categorical),
+        "enum": pl.Series(["x", "y", "x", "y"], dtype=pl.Enum(["x", "y"])),
+        "flag": [True, False, True, True],
+        "when": pl.datetime_range(pl.datetime(2024, 1, 1), pl.datetime(2024, 1, 4), "1d", eager=True),
+    })
+
+    out = ps.xray(df, include="all", expanded=True, great_tables=False).to_dicts()
+    by_col = {r["Column"]: r for r in out}
+
+    # Categorical/Enum are analyzed as strings
+    assert by_col["cat"]["Top"] == "a" and by_col["cat"]["Top_Freq"] == 3
+    assert by_col["enum"]["Top_Freq"] == 2
+
+    # Boolean is analyzed as 0/1 numeric: Mean = share of True
+    assert by_col["flag"]["Mean"] == 0.75
+    assert by_col["flag"]["Min"] == 0.0 and by_col["flag"]["Max"] == 1.0
+
+    # Temporal columns report earliest/latest
+    assert by_col["when"]["Earliest"].startswith("2024-01-01")
+    assert by_col["when"]["Latest"].startswith("2024-01-04")
+
+    # include='string' matches Categorical/Enum
+    string_cols = ps.xray(df, include="string", great_tables=False)["Column"].to_list()
+    assert set(string_cols) == {"cat", "enum"}
+
+    # GT rendering of the mixed frame must not raise in either mode
+    ps.xray(df, include="all")
+    ps.xray(df, include="all", expanded=True)
+
+
+def test_xray_null_aware_duplicate_semantics() -> None:
+    """Uniqueness/duplicates are computed among non-null values only."""
+    import polarscope as ps
+
+    # 4 valid all-unique values + 4 nulls: no duplicates, ratio 1.0
+    df = pl.DataFrame({"x": [1.0, 2.0, 3.0, 4.0, None, None, None, None]})
+    row = ps.xray(df, expanded=True, great_tables=False).to_dicts()[0]
+    assert row["N_Duplicates"] == 0
+    assert row["Uniqueness_Ratio"] == 1.0
+
+
 def test_normality_ks_fallback_for_large_samples() -> None:
     if not xray_mod._check_scipy_availability():
         pytest.skip("scipy not available")
@@ -198,10 +269,10 @@ def test_xray_internal_helpers() -> None:
     quantiles = xray_mod._calculate_quantiles(pl.Series([1.0, 2.0, 3.0, 4.0]), [0.25, 0.5, 0.75])
     assert set(quantiles) == {"25%", "50%", "75%"}
 
-    short_kurtosis = xray_mod._calculate_kurtosis(np.array([1.0, 2.0, 3.0]))
-    assert np.isnan(short_kurtosis)
-    valid_kurtosis = xray_mod._calculate_kurtosis(np.array([1.0, 2.0, 3.0, 4.0, 5.0]))
-    assert isinstance(valid_kurtosis, float)
+    # String-like dtype detection covers Categorical and Enum
+    assert xray_mod._is_stringy(pl.Series(["a"], dtype=pl.Categorical).dtype)
+    assert xray_mod._is_stringy(pl.Series(["x"], dtype=pl.Enum(["x"])).dtype)
+    assert not xray_mod._is_stringy(pl.Series([1]).dtype)
 
     assert xray_mod._suggest_optimal_dtype(pl.Series([1.0, 2.0, float("nan")]), pl.Float64) == "Int64"
     assert xray_mod._suggest_optimal_dtype(pl.Series([1.1, 2.2]), pl.Float64) == "Float32"
