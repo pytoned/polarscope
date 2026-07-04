@@ -24,11 +24,14 @@ Polarscope is a basic data analysis library for Polars DataFrames. It provides a
 - Three datasets ship with the package: `ps.titanic()`, `ps.diabetes()`, and `ps.cardio()` (70k-row health records).
 - Also available via `from polarscope.datasets import titanic, diabetes, cardio`, with loader helpers and dataset metadata.
 
-### 🧹 Utilities
-- Column name cleaning (`clean_column_names`)
-- Datatype optimization (`convert_datatypes`)
-- Missing value dropping (`drop_missing`)
-- Correlation/missing/distribution/categorical plots
+### 🧹 Cleaning & Optimization (`fix`)
+- `ps.fix(df)` cleans and optimizes in one call: column renaming (`case="snake"/"camel"/"pascal"/"kebab"/"upper"/"lower"`), whitespace stripping (empty strings → null), dtype shrinking, and empty-column removal — with a compact report of what changed.
+- Opt-in extras: `drop_duplicate_rows`, `missing_threshold`, `drop_constant_columns`, `outliers="iqr"/"zscore"`.
+- Lossless by default: anything that removes or alters data must be switched on explicitly.
+- Building blocks also available standalone: `clean_column_names`, `convert_datatypes`, `drop_missing`.
+
+### 📈 Plots
+- Correlation/missing/distribution/categorical plots (plotly or altair backends)
 
 ### ✅ Polars-Only Data Handling
 - Data handling is implemented with Polars.
@@ -69,6 +72,13 @@ ps.xray(df, include="all", expanded=True)
 
 # Custom title and correlation analysis
 ps.xray(df, title="My Data Analysis", corr_target="Survived")
+
+# Clean & optimize in one call (snake_case names, trimmed strings,
+# shrunk dtypes, empty columns dropped - with a report)
+df = ps.fix(df)
+
+# Or opt in to deeper cleaning
+df = ps.fix(df, case="camel", drop_duplicate_rows=True, missing_threshold=0.9)
 ```
 
 ### Common `xray()` Options

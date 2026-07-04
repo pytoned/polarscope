@@ -1,5 +1,5 @@
-from .clean import clean_column_names
-from .plots import corr_heatmap, dist_plot, missingval_plot, cat_plot, corr_plot, convert_datatypes, drop_missing, data_cleaning
+from .clean import clean_column_names, convert_datatypes, drop_missing, data_cleaning, fix
+from .plots import corr_heatmap, dist_plot, missingval_plot, cat_plot, corr_plot
 from .utils import save_fig
 from .xray import xray
 from . import datasets
@@ -16,11 +16,12 @@ __all__ = [
     "convert_datatypes",    # Intelligent dtype optimization
     "corr_heatmap",         # Correlation heatmap visualization
     "corr_plot",            # Correlation scatter plots
-    "data_cleaning",        # Comprehensive data cleaning pipeline
+    "data_cleaning",        # Deprecated cleaning pipeline (use fix)
     "datasets",             # Built-in datasets for testing
     "diabetes",             # Built-in Diabetes dataset loader
     "dist_plot",            # Distribution plotting
     "drop_missing",         # Missing value removal
+    "fix",                  # One-call clean & optimize pipeline
     "missingval_plot",      # Missing value pattern visualization
     "plots",                # Plotting module
     "save_fig",             # Universal figure saving utility
@@ -28,7 +29,7 @@ __all__ = [
     "utils",                # Utility functions module
     "xray",                 # Main data inspection function
 ]
-__version__ = "1.8.0"
+__version__ = "1.9.0"
 
 # Package metadata
 __title__ = "polarscope"
