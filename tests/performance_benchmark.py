@@ -8,7 +8,7 @@ import psutil
 import numpy as np
 import polars as pl
 import polarscope as ps
-from typing import Dict, List, Tuple, Callable, Any
+from typing import Dict, Callable, Any
 import warnings
 import gc
 
@@ -191,12 +191,6 @@ class PerformanceBenchmark:
                 ({"axis": "rows"}, "drop_rows"),
                 ({"axis": "columns"}, "drop_columns"),
                 ({"axis": "rows", "thresh": 0.5}, "thresh_50pct")
-            ]),
-            ("data_cleaning", ps.data_cleaning, [
-                ({}, "default"),
-                ({"optimize_dtypes": False}, "no_optimization"),
-                ({"remove_duplicates": False}, "keep_duplicates"),
-                ({"outlier_method": None}, "no_outlier_removal")
             ])
         ]
         

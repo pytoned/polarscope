@@ -1,8 +1,11 @@
 from __future__ import annotations
+import math
+from numbers import Real
+import statistics
+from collections.abc import Iterable
 import polars as pl
 from great_tables import GT
 from typing import Any, Union
-import numpy as np
 import time
 
 # Optional scipy imports - lazy loaded to avoid import warnings
@@ -485,18 +488,14 @@ def xray(
                 try:
                     if distribution_plot == "histogram":
                         # Calculate optimal number of bins (max 12 for nanoplots)
-                        n_bins = min(12, max(5, int(np.sqrt(n_valid))))
+                        n_bins = min(12, max(5, math.isqrt(n_valid)))
 
-                        # Reuse the min/max already computed above for the range
-                        # Create bin edges
                         if min_val == max_val:
                             # All values are the same
                             distribution_data = [n_valid]
                         else:
-                            bin_edges = np.linspace(min_val, max_val, n_bins + 1)
-                            # Calculate histogram using numpy
-                            counts, _ = np.histogram(series_clean.to_numpy(), bins=bin_edges)
-                            distribution_data = counts.tolist()
+                            histogram = series_clean.hist(bin_count=n_bins)
+                            distribution_data = histogram.get_column("count").to_list()
                     
                     
                     col_stats['Distribution_Plot'] = distribution_data
@@ -515,7 +514,7 @@ def xray(
                     col_stats['MAD'] = round(float(mad), 3)
                 
                 # Kurtosis (expanded mode only) - Polars' native excess kurtosis
-                # (matches scipy.stats.kurtosis) instead of a slower numpy pass
+                # (matches scipy.stats.kurtosis) without materializing another array
                 if n_valid > 2:
                     kurt_val = series_clean.kurtosis()
                     col_stats['Kurtosis'] = round(float(kurt_val), 3) if kurt_val is not None else None
@@ -525,10 +524,10 @@ def xray(
                 
                 # Statistical tests (if scipy available)
                 if _check_scipy_availability() and n_valid > 3:
-                    normality_result = _test_normality(series_clean.to_numpy(), normality_test)
+                    normality_result = _test_normality(series_clean, normality_test)
                     col_stats['Normality_Test'] = normality_result
                     
-                    uniformity_result = _test_uniformity(series_clean.to_numpy(), uniformity_test)
+                    uniformity_result = _test_uniformity(series_clean, uniformity_test)
                     col_stats['Uniformity_Test'] = uniformity_result
             
             # Outlier detection (reuse already-computed quartiles for the iqr method)
@@ -874,31 +873,40 @@ def _suggest_optimal_dtype(series: pl.Series, current_dtype) -> str:
     return str(current_dtype)
 
 
-def _test_normality(data: np.ndarray, test_type: str) -> str:
+def _numeric_values(data: pl.Series | Iterable[float]) -> list[float]:
+    """Materialize numeric input without requiring NumPy."""
+    values = data.to_list() if isinstance(data, pl.Series) else list(data)
+    return [float(value) for value in values]
+
+
+def _test_normality(data: pl.Series | Iterable[float], test_type: str) -> str:
     """Perform normality test and return formatted result."""
     if not _check_scipy_availability():
         return "N/A (scipy not available)"
-    
-    if len(data) < 3:
+
+    values = _numeric_values(data)
+    if len(values) < 3:
         return "N/A (insufficient data)"
     
     # Exact KS p-values are expensive for large n and numerically identical to
     # the asymptotic ones there, so switch method past 5000 samples.
-    ks_method = 'asymp' if len(data) > 5000 else 'auto'
+    ks_method = 'asymp' if len(values) > 5000 else 'auto'
 
     try:
         if test_type == "shapiro":
-            if len(data) > 5000:
+            if len(values) > 5000:
                 # Shapiro-Wilk is unreliable for large samples, so fall back to
                 # the KS (Lilliefors) test instead of skipping normality entirely.
-                stat, p_value = stats.kstest(data, 'norm', args=(np.mean(data), np.std(data)), method=ks_method)
+                mean = statistics.fmean(values)
+                std = statistics.pstdev(values)
+                stat, p_value = stats.kstest(values, 'norm', args=(mean, std), method=ks_method)
                 test_name = "Kolmogorov-Smirnov (n>5000)"
             else:
-                stat, p_value = stats.shapiro(data)
+                stat, p_value = stats.shapiro(values)
                 test_name = "Shapiro-Wilk"
 
         elif test_type == "anderson":
-            result = stats.anderson(data, dist='norm')
+            result = stats.anderson(values, dist='norm')
             # Anderson-Darling classically uses critical values (5% level =
             # index 2); SciPy >= 1.19 removes them in favor of a p-value.
             if getattr(result, 'critical_values', None) is not None:
@@ -910,7 +918,9 @@ def _test_normality(data: np.ndarray, test_type: str) -> str:
 
         elif test_type == "ks":
             # Lilliefors test (KS test with estimated parameters)
-            stat, p_value = stats.kstest(data, 'norm', args=(np.mean(data), np.std(data)), method=ks_method)
+            mean = statistics.fmean(values)
+            std = statistics.pstdev(values)
+            stat, p_value = stats.kstest(values, 'norm', args=(mean, std), method=ks_method)
             test_name = "Kolmogorov-Smirnov"
         
         # Format result
@@ -927,40 +937,47 @@ def _test_normality(data: np.ndarray, test_type: str) -> str:
         return f"Error ({test_type}): {str(e)[:20]}"
 
 
-def _test_uniformity(data: np.ndarray, test_type: str) -> str:
+def _test_uniformity(data: pl.Series | Iterable[float], test_type: str) -> str:
     """Perform uniformity test and return formatted result."""
     if not _check_scipy_availability():
         return "N/A (scipy not available)"
-    
-    if len(data) < 5:
+
+    values = _numeric_values(data)
+    if len(values) < 5:
         return "N/A (insufficient data)"
     
     try:
         if test_type == "ks":
             # KS test against uniform distribution
-            min_val, max_val = np.min(data), np.max(data)
+            min_val, max_val = min(values), max(values)
             if min_val == max_val:
                 return "N/A (constant data)"
             
             # Normalize to [0,1] for uniform test (asymptotic p-value for large n)
-            normalized = (data - min_val) / (max_val - min_val)
-            ks_method = 'asymp' if len(data) > 5000 else 'auto'
+            value_range = max_val - min_val
+            normalized = [(value - min_val) / value_range for value in values]
+            ks_method = 'asymp' if len(values) > 5000 else 'auto'
             stat, p_value = stats.kstest(normalized, 'uniform', method=ks_method)
             test_name = "KS"
             
         elif test_type == "chi2":
             # Chi-square goodness of fit test
             # Create bins and expected frequencies
-            n_bins = min(10, int(np.sqrt(len(data))))
-            observed, bin_edges = np.histogram(data, bins=n_bins)
-            expected = np.full(n_bins, len(data) / n_bins)
+            n_bins = min(10, math.isqrt(len(values)))
+            observed = (
+                pl.Series("_values", values)
+                .hist(bin_count=n_bins)
+                .get_column("count")
+                .to_list()
+            )
+            expected_count = len(values) / len(observed)
             
             # Remove bins with very low expected frequency
-            mask = expected >= 5
-            if np.sum(mask) < 2:
+            if expected_count < 5 or len(observed) < 2:
                 return "N/A (insufficient bins)"
             
-            stat, p_value = stats.chisquare(observed[mask], expected[mask])
+            expected = [expected_count] * len(observed)
+            stat, p_value = stats.chisquare(observed, expected)
             test_name = "Chi-square"
         
         # Format result
@@ -1305,21 +1322,21 @@ def _sanitize_nanoplot_column(
             if isinstance(value, (list, tuple)):
                 numeric_values: list[float] = []
                 for item in value:
-                    if isinstance(item, (int, float, np.number)) and np.isfinite(float(item)):
+                    if isinstance(item, Real) and math.isfinite(float(item)):
                         numeric_values.append(float(item))
                 if numeric_values:
                     has_valid_payload = True
                     cleaned.append(numeric_values)
                 else:
                     cleaned.append(None)
-            elif isinstance(value, (int, float, np.number)) and np.isfinite(float(value)):
+            elif isinstance(value, Real) and math.isfinite(float(value)):
                 has_valid_payload = True
                 cleaned.append([float(value)])
             else:
                 cleaned.append(None)
     else:
         for value in values:
-            if isinstance(value, (int, float, np.number)) and np.isfinite(float(value)):
+            if isinstance(value, Real) and math.isfinite(float(value)):
                 has_valid_payload = True
                 cleaned.append(float(value))
             else:

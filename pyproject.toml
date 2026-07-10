@@ -18,18 +18,18 @@ classifiers = [
   "Topic :: Scientific/Engineering :: Information Analysis",
 ]
 dependencies = [
-  "polars>=0.20",
-  "matplotlib>=3.7",
+  "polars>=1.0.0",
+  "plotly>=5.20",
   "great_tables>=0.10"
 ]
 readme = "README.md"
 license = "MIT"
 
 [project.optional-dependencies]
-plotly = ["plotly>=5.20", "kaleido>=0.2"]
+plotly = ["kaleido>=0.2"]
 altair = ["altair>=5"]
 scipy = ["scipy>=1.10"]
-all = ["plotly>=5.20", "kaleido>=0.2", "altair>=5", "scipy>=1.10"]
+all = ["kaleido>=0.2", "altair>=5", "scipy>=1.10"]
 dev = ["pytest>=7.0", "pytest-cov>=4.0", "psutil>=5.9"]
 
 [build-system]

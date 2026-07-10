@@ -1,13 +1,65 @@
 
 from __future__ import annotations
+import math
 from typing import Iterable, Sequence, List
 import polars as pl
 import polars.selectors as cs
 
 # Moved to polarscope.clean; re-exported here for backward compatibility.
-from .clean import convert_datatypes, drop_missing, data_cleaning  # noqa: F401
+from .clean import convert_datatypes, drop_missing  # noqa: F401
 
 # ---------- helpers ----------
+
+_VALID_BACKENDS = ("plotly", "altair")
+_BACKEND_ERROR = "backend must be 'plotly' or 'altair'"
+_ALTAIR_INSTALL_ERROR = (
+    "The Altair backend requires the optional 'altair' dependency. "
+    "Install it with `pip install \"polarscope[altair]\"`."
+)
+
+
+def _require_altair():
+    """Import Altair or raise an actionable optional-dependency error."""
+    try:
+        import altair as alt
+    except ImportError as exc:
+        raise ImportError(_ALTAIR_INSTALL_ERROR) from exc
+    return alt
+
+
+def _validate_backend(backend: str) -> None:
+    if backend not in _VALID_BACKENDS:
+        raise ValueError(_BACKEND_ERROR)
+    if backend == "altair":
+        _require_altair()
+
+
+def _apply_chart_size(chart, width, height):
+    properties = {}
+    if width is not None:
+        properties["width"] = width
+    if height is not None:
+        properties["height"] = height
+    return chart.properties(**properties) if properties else chart
+
+
+def _empty_plot(message: str, backend: str, width, height):
+    """Return an empty backend-specific figure that explains why it is empty."""
+    if backend == "plotly":
+        import plotly.graph_objects as go
+
+        figure = go.Figure()
+        figure.update_layout(title=message, width=width, height=height)
+        return figure
+
+    alt = _require_altair()
+    chart = (
+        alt.Chart(alt.Data(values=[{"message": message}]))
+        .mark_text()
+        .encode(text="message:N")
+    )
+    return _apply_chart_size(chart, width, height)
+
 
 def _numeric_columns(df: pl.DataFrame) -> list[str]:
     try:
@@ -30,11 +82,42 @@ def _ensure_columns(df: pl.DataFrame, columns: Iterable[str] | None) -> list[str
         dtypes = dict(zip(df.columns, df.dtypes))
         return [c for c in valid_cols if dtypes[c].is_numeric()]
 
+
+def _correlation_matrix(
+    df: pl.DataFrame,
+    columns: Sequence[str],
+    method: str,
+) -> list[list[float | None]]:
+    """Compute a symmetric correlation matrix with Polars expressions."""
+    expressions = []
+    positions = []
+    for row_idx, row_name in enumerate(columns):
+        for col_idx in range(row_idx, len(columns)):
+            col_name = columns[col_idx]
+            alias = f"__corr_{row_idx}_{col_idx}"
+            expressions.append(
+                pl.corr(row_name, col_name, method=method).alias(alias)
+            )
+            positions.append((row_idx, col_idx, alias))
+
+    correlation_row = df.select(expressions).row(0, named=True)
+    matrix: list[list[float | None]] = [
+        [None for _ in columns] for _ in columns
+    ]
+    for row_idx, col_idx, alias in positions:
+        value = correlation_row[alias]
+        correlation = float(value) if value is not None else None
+        matrix[row_idx][col_idx] = correlation
+        matrix[col_idx][row_idx] = correlation
+
+    return matrix
+
+
 # ---------- Plotly backends ----------
 
 def _dist_plot_plotly(s: pl.Series, column: str, bins: int, width, height):
     import plotly.graph_objects as go
-    fig = go.Figure(data=[go.Histogram(x=s.to_numpy(), nbinsx=bins)])
+    fig = go.Figure(data=[go.Histogram(x=s.to_list(), nbinsx=bins)])
     fig.update_layout(title=f"Distribution: {column}", xaxis_title=column, yaxis_title="Count",
                       width=width, height=height)
     return fig
@@ -191,7 +274,7 @@ def _corr_plot_plotly(columns: list[str], corr_matrix: list, method: str, intera
 # ---------- Altair backends ----------
 
 def _corr_heatmap_altair_enhanced(row_labels: list, col_labels: list, mat: List[List[float]], annotate: bool, method: str, target: str, width, height):
-    import altair as alt
+    alt = _require_altair()
     
     # Prepare data for altair - handle None values
     data = []
@@ -206,10 +289,7 @@ def _corr_heatmap_altair_enhanced(row_labels: list, col_labels: list, mat: List[
                 })
     
     if not data:
-        # Return empty chart with message
-        return alt.Chart(pl.DataFrame({'message': ['No correlations to display']})).mark_text(
-            text='No correlations to display'
-        ).properties(width=width or 400, height=height or 300)
+        return _empty_plot("No correlations to display", "altair", width or 400, height or 300)
     
     df_data = pl.DataFrame(data)
     
@@ -229,9 +309,7 @@ def _corr_heatmap_altair_enhanced(row_labels: list, col_labels: list, mat: List[
     else:
         title = f"{method.title()} Correlation Matrix"
     
-    base = base.properties(title=title)
-    if width: base = base.properties(width=width)
-    if height: base = base.properties(height=height)
+    base = _apply_chart_size(base.properties(title=title), width, height)
     
     # Add text annotations if requested
     if annotate:
@@ -243,26 +321,23 @@ def _corr_heatmap_altair_enhanced(row_labels: list, col_labels: list, mat: List[
             y='row:N', 
             text=alt.Text('correlation:Q', format='.3f')
         )
-        if width: text = text.properties(width=width)
-        if height: text = text.properties(height=height)
+        text = _apply_chart_size(text, width, height)
         return base + text
     
     return base
 
 def _dist_plot_altair(s: pl.Series, column: str, bins: int, width, height):
-    import altair as alt
+    alt = _require_altair()
     df_data = pl.DataFrame({column: s})
     chart = alt.Chart(df_data).mark_bar().encode(
         x=alt.X(f"{column}:Q", bin=alt.Bin(maxbins=bins)),
         y="count()",
         tooltip=[column]
     ).properties(title=f"Distribution: {column}")
-    if width:  chart = chart.properties(width=width)
-    if height: chart = chart.properties(height=height)
-    return chart
+    return _apply_chart_size(chart, width, height)
 
 def _missingval_plot_altair(cols: List[str], ratios: List[float], counts: List[int], width, height, normalize: bool = False):
-    import altair as alt
+    alt = _require_altair()
     if normalize:
         x_field = "ratio"
         x_title = "Share of missing values"
@@ -278,17 +353,15 @@ def _missingval_plot_altair(cols: List[str], ratios: List[float], counts: List[i
         x=alt.X(f"{x_field}:Q", title=x_title),
         tooltip=["column", "count", "ratio"]
     ).properties(title="Missing values per column")
-    if width:  base = base.properties(width=width)
-    if height: base = base.properties(height=height)
+    base = _apply_chart_size(base, width, height)
     text = alt.Chart(df_data).mark_text(align="left", baseline="middle", dx=3).encode(
         y="column:N", x=f"{x_field}:Q", text="text_value:N"
     )
-    if width:  text = text.properties(width=width)
-    if height: text = text.properties(height=height)
+    text = _apply_chart_size(text, width, height)
     return base + text
 
 def _cat_plot_altair(cat_data: dict, width, height):
-    import altair as alt
+    alt = _require_altair()
     
     # Prepare data for all columns
     all_data = []
@@ -311,8 +384,7 @@ def _cat_plot_altair(cat_data: dict, width, height):
             })
     
     if not all_data:
-        # Return empty chart
-        return alt.Chart(pl.DataFrame({'x': [0], 'y': [0]})).mark_point()
+        return _empty_plot("No categorical values to display", "altair", width, height)
     
     df_data = pl.DataFrame(all_data)
     
@@ -331,13 +403,11 @@ def _cat_plot_altair(cat_data: dict, width, height):
         x='independent'
     )
     
-    if width: chart = chart.properties(width=width // len(cat_data))
-    if height: chart = chart.properties(height=height)
-    
-    return chart
+    chart_width = width // len(cat_data) if width is not None else None
+    return _apply_chart_size(chart, chart_width, height)
 
 def _corr_plot_altair(columns: list[str], corr_matrix: list, method: str, width, height):
-    import altair as alt
+    alt = _require_altair()
     
     # Prepare data for altair
     data = []
@@ -362,15 +432,9 @@ def _corr_plot_altair(columns: list[str], corr_matrix: list, method: str, width,
         title=f"{method.title()} Correlation Matrix"
     )
     
-    if width: chart = chart.properties(width=width)
-    if height: chart = chart.properties(height=height)
-    
-    return chart
+    return _apply_chart_size(chart, width, height)
 
 # ---------- Public APIs ----------
-
-_VALID_BACKENDS = ("plotly", "altair")
-_BACKEND_ERROR = "backend must be 'plotly' or 'altair'"
 
 
 def corr_heatmap(
@@ -443,8 +507,7 @@ def corr_heatmap(
     if not 0 <= threshold <= 1:
         raise ValueError("threshold must be between 0 and 1")
     
-    if backend not in _VALID_BACKENDS:
-        raise ValueError(_BACKEND_ERROR)
+    _validate_backend(backend)
     
     # Set default threshold for high/low splits
     if split in ["high", "low"] and threshold == 0.0:
@@ -471,20 +534,16 @@ def corr_heatmap(
         if len(cols) == 0:
             raise ValueError("No numeric columns available for target correlation")
         
-        # Calculate target correlations
-        correlations = []
-        for col in cols:
-            if method == "pearson":
-                corr_val = df.select([pl.corr(target, col)]).item()
-            else:  # spearman
-                # Rank-based correlation
-                ranked_df = df.select([
-                    pl.col(target).rank().alias('target_rank'),
-                    pl.col(col).rank().alias('col_rank')
-                ])
-                corr_val = ranked_df.select([pl.corr('target_rank', 'col_rank')]).item()
-            
-            correlations.append(corr_val if corr_val is not None else 0.0)
+        correlation_row = df.select(
+            [
+                pl.corr(target, col, method=method).alias(col)
+                for col in cols
+            ]
+        ).row(0, named=True)
+        correlations = [
+            correlation_row[col] if correlation_row[col] is not None else 0.0
+            for col in cols
+        ]
         
         # Create target correlation matrix (1 row)
         mat = [correlations]
@@ -497,19 +556,7 @@ def corr_heatmap(
         if len(cols) < 2:
             raise ValueError("Need at least 2 numeric columns for correlation matrix")
         
-        # Calculate correlation matrix
-        df_numeric = df.select(cols)
-        
-        if method == "pearson":
-            corr_df = df_numeric.corr()
-        else:  # spearman
-            # Rank all columns then correlate
-            ranked_df = df_numeric.select([
-                pl.col(c).rank().alias(c) for c in cols
-            ])
-            corr_df = ranked_df.corr()
-        
-        mat = corr_df.to_numpy().tolist()
+        mat = _correlation_matrix(df, cols, method)
         correlation_cols = cols
         correlation_rows = cols
     
@@ -534,22 +581,12 @@ def corr_heatmap(
     
     # Check if we have any data to plot after filtering
     if split and all(all(val is None for val in row) for row in mat):
-        if backend == "plotly":
-            import plotly.graph_objects as go
-            fig = go.Figure()
-            fig.update_layout(
-                title=f'No correlations found with split="{split}" and threshold={threshold}',
-                width=width, height=height
-            )
-            return fig
-        elif backend == "altair":
-            import altair as alt
-            chart = alt.Chart(pl.DataFrame({"message": ["No correlations found"]})).mark_text(
-                text=f'No correlations found with split="{split}" and threshold={threshold}'
-            )
-            if width: chart = chart.properties(width=width)
-            if height: chart = chart.properties(height=height)
-            return chart
+        return _empty_plot(
+            f'No correlations found with split="{split}" and threshold={threshold}',
+            backend,
+            width,
+            height,
+        )
     
     # Generate plot with appropriate backend
     if backend == "plotly":
@@ -591,46 +628,18 @@ def dist_plot(
     Figure object
         The distribution plot figure (plotly Figure or altair Chart).
     """
-    if backend not in _VALID_BACKENDS:
-        raise ValueError(_BACKEND_ERROR)
+    _validate_backend(backend)
 
     cols = _numeric_columns(df)
     if column is None:
         if not cols:
-            if backend == "plotly":
-                import plotly.graph_objects as go
-                fig = go.Figure(); fig.update_layout(title="No numeric column found",
-                                                     width=width, height=height); return fig
-            else:
-                import altair as alt
-                chart = alt.Chart(pl.DataFrame({"values": []})).mark_bar()
-                if width:  chart = chart.properties(width=width)
-                if height: chart = chart.properties(height=height)
-                return chart
+            return _empty_plot("No numeric column found", backend, width, height)
         column = cols[0]
     elif column not in df.columns:
-        if backend == "plotly":
-            import plotly.graph_objects as go
-            fig = go.Figure(); fig.update_layout(title=f"Column '{column}' not found",
-                                                 width=width, height=height); return fig
-        else:
-            import altair as alt
-            chart = alt.Chart(pl.DataFrame({"values": []})).mark_bar()
-            if width:  chart = chart.properties(width=width)
-            if height: chart = chart.properties(height=height)
-            return chart
+        return _empty_plot(f"Column '{column}' not found", backend, width, height)
     else:
         if not df[column].dtype.is_numeric():
-            if backend == "plotly":
-                import plotly.graph_objects as go
-                fig = go.Figure(); fig.update_layout(title=f"Column '{column}' is not numeric",
-                                                     width=width, height=height); return fig
-            else:
-                import altair as alt
-                chart = alt.Chart(pl.DataFrame({"values": []})).mark_bar()
-                if width:  chart = chart.properties(width=width)
-                if height: chart = chart.properties(height=height)
-                return chart
+            return _empty_plot(f"Column '{column}' is not numeric", backend, width, height)
 
     s = df.select(pl.col(column).drop_nulls()).to_series()
     if s.dtype not in (pl.Float32, pl.Float64):
@@ -680,19 +689,10 @@ def missingval_plot(
     if sort not in {"desc", "asc", "none"}:
         raise ValueError("sort must be 'desc', 'asc', or 'none'")
 
-    if backend not in _VALID_BACKENDS:
-        raise ValueError(_BACKEND_ERROR)
+    _validate_backend(backend)
 
     if not cols:
-        if backend == "plotly":
-            import plotly.graph_objects as go
-            fig = go.Figure(); fig.update_layout(title="No columns", width=width, height=height); return fig
-        else:
-            import altair as alt
-            chart = alt.Chart(pl.DataFrame({"values": []})).mark_bar()
-            if width:  chart = chart.properties(width=width)
-            if height: chart = chart.properties(height=height)
-            return chart
+        return _empty_plot("No columns", backend, width, height)
 
     null_counts_row = df.select([pl.col(c).is_null().sum().alias(c) for c in cols])
     total = df.height
@@ -752,26 +752,14 @@ def cat_plot(
     if top < 0 or bottom < 0:
         raise ValueError("top and bottom must be non-negative")
 
-    if backend not in _VALID_BACKENDS:
-        raise ValueError(_BACKEND_ERROR)
+    _validate_backend(backend)
 
     # Get categorical columns (string/categorical types)
     cat_cols = [c for c, dt in zip(df.columns, df.dtypes) 
                 if dt in (pl.String, pl.Utf8, pl.Categorical)]
     
     if not cat_cols:
-        # No categorical columns found
-        if backend == "plotly":
-            import plotly.graph_objects as go
-            fig = go.Figure()
-            fig.update_layout(title="No categorical columns found", width=width, height=height)
-            return fig
-        else:
-            import altair as alt
-            chart = alt.Chart(pl.DataFrame({"values": []})).mark_bar()
-            if width:  chart = chart.properties(width=width)
-            if height: chart = chart.properties(height=height)
-            return chart
+        return _empty_plot("No categorical columns found", backend, width, height)
     
     # Calculate value counts for each categorical column
     cat_data = {}
@@ -851,8 +839,7 @@ def corr_plot(
     Figure object
         Enhanced correlation plot (plotly Figure or altair Chart).
     """
-    if backend not in _VALID_BACKENDS:
-        raise ValueError(_BACKEND_ERROR)
+    _validate_backend(backend)
 
     # Get numeric columns
     if columns is None:
@@ -863,40 +850,43 @@ def corr_plot(
     if len(columns) < 2:
         raise ValueError("Need at least 2 numeric columns for correlation plot")
     
-    # Calculate correlation matrix
-    df_numeric = df.select(columns)
-    
-    if method == "pearson":
-        corr_df = df_numeric.corr()
-    elif method == "spearman":
-        ranked_df = df_numeric.select([
-            pl.col(c).rank().alias(c) for c in columns
-        ])
-        corr_df = ranked_df.corr()
-    else:
+    if method not in ("pearson", "spearman"):
         raise ValueError("method must be 'pearson' or 'spearman'")
-    
-    # Convert to matrix format
-    corr_matrix = corr_df.to_numpy()
+
+    corr_matrix = _correlation_matrix(df, columns, method)
     
     # Clustering logic
     if clustered:
         try:
             from scipy.cluster.hierarchy import linkage, leaves_list
             from scipy.spatial.distance import squareform
-            import numpy as np
             
             # Replace NaN with 0 in correlation matrix before computing distances
             # NaN occurs when a column has no variance or all nulls
-            corr_clean = np.nan_to_num(corr_matrix, nan=0.0)
-            distance_matrix = 1 - np.abs(corr_clean)
-            # Ensure diagonal is exactly 0 (avoid floating-point noise)
-            np.fill_diagonal(distance_matrix, 0.0)
+            corr_clean = [
+                [
+                    float(value)
+                    if value is not None and math.isfinite(float(value))
+                    else 0.0
+                    for value in row
+                ]
+                for row in corr_matrix
+            ]
+            distance_matrix = [
+                [
+                    0.0 if row_idx == col_idx else 1 - abs(value)
+                    for col_idx, value in enumerate(row)
+                ]
+                for row_idx, row in enumerate(corr_clean)
+            ]
             condensed_distances = squareform(distance_matrix, checks=False)
             linkage_matrix = linkage(condensed_distances, method='average')
-            cluster_order = leaves_list(linkage_matrix)
+            cluster_order = [int(index) for index in leaves_list(linkage_matrix)]
             
-            corr_matrix = corr_matrix[cluster_order][:, cluster_order]
+            corr_matrix = [
+                [corr_matrix[row_idx][col_idx] for col_idx in cluster_order]
+                for row_idx in cluster_order
+            ]
             columns = [columns[i] for i in cluster_order]
             
         except ImportError:
@@ -909,9 +899,9 @@ def corr_plot(
         backend = "plotly"  # Force plotly for interactivity
     
     if backend == "plotly":
-        return _corr_plot_plotly(columns, corr_matrix.tolist(), method, interactive, clustered, width, height)
+        return _corr_plot_plotly(columns, corr_matrix, method, interactive, clustered, width, height)
     elif backend == "altair":
-        return _corr_plot_altair(columns, corr_matrix.tolist(), method, width, height)
+        return _corr_plot_altair(columns, corr_matrix, method, width, height)
     else:
         raise ValueError(_BACKEND_ERROR)
 

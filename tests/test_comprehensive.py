@@ -7,7 +7,6 @@ import pytest
 import polars as pl
 import numpy as np
 import polarscope as ps
-from typing import Any, Dict, List
 import warnings
 import importlib
 from polarscope.datasets import _get_data_path
@@ -495,28 +494,6 @@ class TestDataProcessingFunctions:
         result = ps.drop_missing(df, axis="rows", subset=["missing_heavy"])
         assert isinstance(result, pl.DataFrame)
     
-    def test_data_cleaning(self):
-        """Test comprehensive data cleaning function."""
-        df = TestDataGenerator.create_problematic_df(100)
-        
-        # Basic cleaning
-        result = ps.data_cleaning(df)
-        assert isinstance(result, pl.DataFrame)
-        
-        # Custom parameters
-        result = ps.data_cleaning(
-            df,
-            drop_missing_thresh=0.8,
-            optimize_dtypes=False,
-            remove_duplicates=False,
-            outlier_method="iqr",
-            outlier_threshold=2.0,
-            categorical_threshold=0.4,
-            max_cardinality=20
-        )
-        assert isinstance(result, pl.DataFrame)
-
-
 class TestUtilityFunctions:
     """Test utility functions."""
     

@@ -50,9 +50,14 @@ pip install polarscope
 Optional extras:
 
 ```bash
-pip install "polarscope[all]"      # plotly + altair + scipy helpers
+pip install "polarscope[altair]"   # optional Altair plotting backend
+pip install "polarscope[plotly]"   # Kaleido support for static Plotly images
+pip install "polarscope[scipy]"    # statistical tests
+pip install "polarscope[all]"      # all optional features
 pip install "polarscope[dev]"      # pytest + coverage tools
 ```
+
+Plotly is included in the base installation and is the default plotting backend.
 
 ### Basic Usage
 

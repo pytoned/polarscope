@@ -6,13 +6,11 @@ Public functions:
     clean_column_names() - column name normalization (case styles)
     convert_datatypes()  - dtype shrinking for memory savings
     drop_missing()       - drop sparse rows/columns
-    data_cleaning()      - deprecated pipeline, superseded by fix()
 """
 
 from __future__ import annotations
 import re
 import unicodedata
-import warnings
 import polars as pl
 
 # Case styles accepted by clean_column_names / fix
@@ -498,114 +496,4 @@ def fix(
         col_note = f"{cols_before} -> {cols_after}" if cols_after != cols_before else f"{cols_before} (unchanged)"
         print(f"Rows: {row_note} | Columns: {col_note}")
 
-    return result
-
-
-def data_cleaning(
-    df: pl.DataFrame,
-    *,
-    drop_missing_thresh: float = 0.9,
-    optimize_dtypes: bool = True,
-    remove_duplicates: bool = True,
-    outlier_method: str | None = "iqr",
-    outlier_threshold: float = 1.5,
-    categorical_threshold: float = 0.5,
-    max_cardinality: int = 50,
-) -> pl.DataFrame:
-    """
-    Comprehensive data cleaning pipeline.
-
-    .. deprecated::
-        Use :func:`fix` instead - it has safer defaults (no outlier nulling
-        unless requested) and a consolidated report.
-
-    Parameters
-    ----------
-    df : pl.DataFrame
-        The input DataFrame to clean.
-    drop_missing_thresh : float, default 0.9
-        Threshold for dropping columns with missing values (keep if >= thresh).
-    optimize_dtypes : bool, default True
-        Whether to optimize data types for memory efficiency.
-    remove_duplicates : bool, default True
-        Whether to remove duplicate rows.
-    outlier_method : str | None, default "iqr"
-        Method for outlier detection ("iqr", "zscore", None).
-    outlier_threshold : float, default 1.5
-        Threshold for outlier detection (IQR multiplier or Z-score).
-    categorical_threshold : float, default 0.5
-        Threshold for converting strings to categorical.
-    max_cardinality : int, default 50
-        Maximum unique values for categorical conversion.
-
-    Returns
-    -------
-    pl.DataFrame
-        Cleaned DataFrame.
-    """
-    warnings.warn(
-        "data_cleaning() is deprecated; use polarscope.fix() instead",
-        DeprecationWarning,
-        stacklevel=2,
-    )
-
-    result = df.clone()
-
-    print(f"Starting data cleaning: {result.shape}")
-
-    # 1. Remove columns with too many missing values
-    result = drop_missing(result, axis="columns", thresh=drop_missing_thresh)
-    print(f"After dropping sparse columns: {result.shape}")
-
-    # 2. Remove duplicate rows
-    if remove_duplicates:
-        before_rows = len(result)
-        result = result.unique()
-        after_rows = len(result)
-        if before_rows != after_rows:
-            print(f"Removed {before_rows - after_rows} duplicate rows")
-
-    # 3. Handle outliers in numeric columns
-    if outlier_method:
-        numeric_cols = [c for c, dt in result.schema.items() if dt.is_numeric()]
-
-        for col in numeric_cols:
-            series = result[col]
-
-            if outlier_method == "iqr":
-                Q1 = series.quantile(0.25)
-                Q3 = series.quantile(0.75)
-                IQR = Q3 - Q1
-                lower_bound = Q1 - outlier_threshold * IQR
-                upper_bound = Q3 + outlier_threshold * IQR
-
-                result = result.with_columns(
-                    pl.when((pl.col(col) < lower_bound) | (pl.col(col) > upper_bound))
-                    .then(None)
-                    .otherwise(pl.col(col))
-                    .alias(col)
-                )
-
-            elif outlier_method == "zscore":
-                mean_val = series.mean()
-                std_val = series.std()
-
-                if std_val > 0:
-                    result = result.with_columns(
-                        pl.when(((pl.col(col) - mean_val) / std_val).abs() > outlier_threshold)
-                        .then(None)
-                        .otherwise(pl.col(col))
-                        .alias(col)
-                    )
-
-    # 4. Optimize data types
-    if optimize_dtypes:
-        result = convert_datatypes(
-            result,
-            categorical_threshold=categorical_threshold,
-            max_cardinality=max_cardinality
-        )
-        print(f"Data types optimized")
-
-    print(f"Data cleaning complete: {result.shape}")
     return result

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import builtins
 import importlib
 import sys
 import types
@@ -347,6 +348,25 @@ def test_missingval_plot_sort_validation() -> None:
     df = pl.DataFrame({"a": [1, None], "b": [None, 2]})
     with pytest.raises(ValueError):
         plots_mod.missingval_plot(df, sort="invalid", backend="plotly")
+
+
+def test_altair_backend_has_actionable_missing_extra_error(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    original_import = builtins.__import__
+
+    def import_without_altair(name, *args, **kwargs):
+        if name == "altair":
+            raise ModuleNotFoundError("No module named 'altair'")
+        return original_import(name, *args, **kwargs)
+
+    monkeypatch.setattr(builtins, "__import__", import_without_altair)
+
+    with pytest.raises(ImportError, match=r"polarscope\[altair\]"):
+        plots_mod.dist_plot(
+            pl.DataFrame({"value": [1, 2, 3]}),
+            backend="altair",
+        )
 
 
 def test_cat_plot_true_bottom_values_and_validation() -> None:

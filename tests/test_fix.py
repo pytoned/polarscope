@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import warnings
-
 import polars as pl
 import pytest
 
@@ -117,13 +115,13 @@ class TestFix:
 
 class TestBackwardCompat:
     def test_moved_functions_still_importable_from_plots(self):
-        from polarscope.plots import convert_datatypes, drop_missing, data_cleaning  # noqa: F401
+        from polarscope.plots import convert_datatypes, drop_missing  # noqa: F401
 
-    def test_data_cleaning_warns_deprecation(self):
-        with warnings.catch_warnings(record=True) as caught:
-            warnings.simplefilter("always")
-            ps.data_cleaning(pl.DataFrame({"a": [1, 2, 3]}), outlier_method=None)
-        assert any(issubclass(w.category, DeprecationWarning) for w in caught)
+    def test_data_cleaning_removed(self):
+        import polarscope.plots as plots
+
+        assert not hasattr(ps, "data_cleaning")
+        assert not hasattr(plots, "data_cleaning")
 
     def test_convert_datatypes_shrinks_columns_with_nulls(self):
         df = pl.DataFrame({"x": [1, 2, None, 200], "s": ["a", "a", None, "b"]})
