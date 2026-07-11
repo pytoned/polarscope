@@ -237,7 +237,7 @@ def _corr_heatmap_plotly_enhanced(row_labels: list, col_labels: list, mat: List[
     
     return fig
 
-def _corr_plot_plotly(columns: list[str], corr_matrix: list, method: str, interactive: bool, clustered: bool, width, height):
+def _corr_plot_plotly(columns: list[str], corr_matrix: list, method: str, clustered: bool, width, height):
     import plotly.graph_objects as go
     
     # Enhanced interactive heatmap
@@ -642,8 +642,6 @@ def dist_plot(
             return _empty_plot(f"Column '{column}' is not numeric", backend, width, height)
 
     s = df.select(pl.col(column).drop_nulls()).to_series()
-    if s.dtype not in (pl.Float32, pl.Float64):
-        s = s.cast(pl.Float64)
 
     if backend == "plotly":
         return _dist_plot_plotly(s, column, bins, width, height)
@@ -694,7 +692,14 @@ def missingval_plot(
     if not cols:
         return _empty_plot("No columns", backend, width, height)
 
-    null_counts_row = df.select([pl.col(c).is_null().sum().alias(c) for c in cols])
+    missing_expressions = []
+    for column, dtype in df.schema.items():
+        missing = pl.col(column).is_null()
+        if dtype.is_float():
+            missing = missing | pl.col(column).is_nan()
+        missing_expressions.append(missing.sum().alias(column))
+
+    null_counts_row = df.select(missing_expressions)
     total = df.height
     counts = [int(null_counts_row.select(pl.col(c)).item()) for c in cols]
     ratios = [cnt / max(total, 1) for cnt in counts]
@@ -755,8 +760,11 @@ def cat_plot(
     _validate_backend(backend)
 
     # Get categorical columns (string/categorical types)
-    cat_cols = [c for c, dt in zip(df.columns, df.dtypes) 
-                if dt in (pl.String, pl.Utf8, pl.Categorical)]
+    cat_cols = [
+        c
+        for c, dt in zip(df.columns, df.dtypes)
+        if dt == pl.String or isinstance(dt, (pl.Categorical, pl.Enum))
+    ]
     
     if not cat_cols:
         return _empty_plot("No categorical columns found", backend, width, height)
@@ -824,7 +832,8 @@ def corr_plot(
     method : str, default "pearson"
         Correlation method ("pearson", "spearman").
     interactive : bool, default True
-        Whether to create interactive plots (plotly) or static (altair).
+        Deprecated compatibility parameter. The explicit ``backend`` selection
+        controls which plotting library is used.
     clustered : bool, default False
         Whether to cluster correlations by similarity (requires scipy).
     width : int | None, optional
@@ -894,12 +903,8 @@ def corr_plot(
         except Exception as exc:
             print(f"Clustering failed ({exc.__class__.__name__}: {exc}), skipping clustering")
     
-    # Choose appropriate backend based on interactivity preference
-    if interactive and backend != "plotly":
-        backend = "plotly"  # Force plotly for interactivity
-    
     if backend == "plotly":
-        return _corr_plot_plotly(columns, corr_matrix, method, interactive, clustered, width, height)
+        return _corr_plot_plotly(columns, corr_matrix, method, clustered, width, height)
     elif backend == "altair":
         return _corr_plot_altair(columns, corr_matrix, method, width, height)
     else:
