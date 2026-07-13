@@ -388,6 +388,13 @@ def test_cat_plot_true_bottom_values_and_validation() -> None:
         plots_mod.cat_plot(df, top=-1, bottom=2, backend="plotly")
 
 
+def test_corr_plot_respects_explicit_altair_backend() -> None:
+    pytest.importorskip("altair")
+    frame = pl.DataFrame({"a": [1, 2, 3], "b": [3, 2, 1]})
+    chart = plots_mod.corr_plot(frame, backend="altair")
+    assert type(chart).__module__.startswith("altair.")
+
+
 def test_corr_plot_cluster_fallback(monkeypatch: pytest.MonkeyPatch) -> None:
     df = pl.DataFrame({"a": [1.0, 2.0, 3.0], "b": [3.0, 2.0, 1.0], "c": [1.0, 3.0, 2.0]})
 

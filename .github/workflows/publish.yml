@@ -7,8 +7,13 @@ on:
       - "v*"
 
 jobs:
+  test:
+    name: Run supported-version tests
+    uses: ./.github/workflows/test.yml
+
   build:
     name: Build distribution
+    needs: test
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5

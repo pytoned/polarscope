@@ -92,6 +92,13 @@ class TestFix:
         assert out["v"].to_list()[-1] is None
         with pytest.raises(ValueError, match="outliers must be"):
             ps.fix(df, outliers="bogus", verbose=False)
+        with pytest.raises(ValueError, match="positive finite"):
+            ps.fix(
+                df,
+                outliers="zscore",
+                outlier_threshold=-1,
+                verbose=False,
+            )
 
     def test_missing_threshold_validation(self):
         with pytest.raises(ValueError, match="missing_threshold"):

@@ -176,6 +176,14 @@ class TestXrayFunction:
         # Percentile method
         result = ps.xray(df, outlier_method="percentile", outlier_bounds=[0.05, 0.95])
         assert result is not None
+
+        for invalid_bounds in ([0.95, 0.05], [-0.1, 0.9], [0.1, 1.1]):
+            with pytest.raises(ValueError):
+                ps.xray(
+                    df,
+                    outlier_method="percentile",
+                    outlier_bounds=invalid_bounds,
+                )
         
         # Z-score method
         result = ps.xray(df, outlier_method="zscore")
