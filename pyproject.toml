@@ -43,6 +43,7 @@ version = { attr = "polarscope.__version__" }
 
 [tool.setuptools.packages.find]
 where = ["."]
+include = ["polarscope*"]
 
 [tool.setuptools.package-data]
 polarscope = ["data/*.parquet"]

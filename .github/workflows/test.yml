@@ -1,0 +1,118 @@
+name: Test
+
+on:
+  push:
+    branches: [main, experimentv2]
+  pull_request:
+  workflow_call:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: Python ${{ matrix.python-version }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.9", "3.10", "3.11", "3.12", "3.13"]
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Install package and test dependencies
+        run: python -m pip install --upgrade pip && python -m pip install -e ".[all,dev]" ruff
+
+      - name: Lint package source
+        run: ruff check polarscope
+
+      - name: Run tests
+        run: python -m pytest -q
+
+  minimum-dependencies:
+    name: Minimum dependencies
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.9"
+
+      - name: Install declared minimums
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e . --no-deps
+          python -m pip install \
+            "polars==1.0.0" \
+            "plotly==5.20.0" \
+            "great_tables==0.10.0" \
+            "altair==5.0.0" \
+            "scipy==1.10.0" \
+            "kaleido==0.2.1" \
+            "pytest==7.0.0" \
+            "pytest-cov==4.0.0" \
+            "psutil==5.9.0"
+
+      - name: Run tests
+        run: python -m pytest -q
+
+  base-install:
+    name: Base install without optional dependencies
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.13"
+
+      - name: Install base package
+        run: python -m pip install --upgrade pip && python -m pip install .
+
+      - name: Smoke-test default APIs
+        run: |
+          cd /tmp
+          python - <<'PY'
+          import importlib.util
+          import polars as pl
+          import polarscope as ps
+
+          frame = pl.DataFrame({"x": [1, 2, 3], "y": [2, 4, 5]})
+          assert importlib.util.find_spec("numpy") is None
+          assert importlib.util.find_spec("matplotlib") is None
+          ps.xray(frame, great_tables=False)
+          ps.dist_plot(frame)
+          ps.corr_heatmap(frame)
+          PY
+
+  package:
+    name: Build distributions
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.13"
+
+      - name: Build and validate
+        run: |
+          python -m pip install --upgrade pip build twine
+          python -m build
+          python -m twine check dist/*
+
+      - name: Ensure tests are not shipped in the wheel
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          from zipfile import ZipFile
+
+          wheel = next(Path("dist").glob("*.whl"))
+          with ZipFile(wheel) as archive:
+              assert not any(name.startswith("tests/") for name in archive.namelist())
+          PY

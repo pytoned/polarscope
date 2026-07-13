@@ -9,6 +9,7 @@ Public functions:
 """
 
 from __future__ import annotations
+import math
 import re
 import unicodedata
 import polars as pl
@@ -225,18 +226,22 @@ def drop_missing(
         Threshold for dropping. If float, interpreted as percentage of
         non-null values required (0.0 to 1.0). If None, drop any with nulls.
     subset : list[str] | None, optional
-        Specific columns to consider for row dropping, or specific rows
-        to consider for column dropping.
+        Specific columns to consider for row dropping. Only supported when
+        ``axis="rows"`` because Polars DataFrames do not have row labels.
 
     Returns
     -------
     pl.DataFrame
         DataFrame with missing values dropped.
     """
-    import math
-
     if thresh is not None and not 0.0 <= thresh <= 1.0:
         raise ValueError("thresh must be between 0 and 1")
+
+    if axis not in {"rows", "columns"}:
+        raise ValueError("axis must be 'rows' or 'columns'")
+
+    if axis == "columns" and subset is not None:
+        raise ValueError("subset is only supported when axis='rows'")
 
     if subset:
         missing_subset = [c for c in subset if c not in df.columns]
@@ -244,6 +249,8 @@ def drop_missing(
             raise ValueError(f"subset contains unknown columns: {missing_subset}")
 
     if axis == "rows":
+        if not df.columns:
+            return df.clone()
         if subset:
             if thresh is None:
                 return df.filter(~pl.any_horizontal([pl.col(c).is_null() for c in subset]))
@@ -261,7 +268,7 @@ def drop_missing(
                     pl.sum_horizontal([pl.col(c).is_not_null().cast(pl.Int32) for c in df.columns]) >= required_count
                 )
 
-    elif axis == "columns":
+    else:
         cols_to_keep = []
         total_rows = len(df)
 
@@ -279,10 +286,6 @@ def drop_missing(
                     cols_to_keep.append(col)
 
         return df.select(cols_to_keep) if cols_to_keep else df.select([])
-
-    else:
-        raise ValueError("axis must be 'rows' or 'columns'")
-
 
 def _fmt_size(n_bytes: float) -> str:
     """Format a byte count with a sensible unit."""
@@ -360,6 +363,14 @@ def fix(
         raise ValueError("outliers must be None, 'iqr', or 'zscore'")
     if missing_threshold is not None and not 0.0 <= missing_threshold <= 1.0:
         raise ValueError("missing_threshold must be between 0 and 1")
+    if (
+        outlier_threshold is not None
+        and (
+            not math.isfinite(outlier_threshold)
+            or outlier_threshold <= 0
+        )
+    ):
+        raise ValueError("outlier_threshold must be a positive finite number")
 
     result = df.clone()
     report: list[str] = []
