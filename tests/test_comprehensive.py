@@ -210,6 +210,14 @@ class TestXrayFunction:
             
             result = ps.xray(df, corr_target=col, expanded=True)
             assert result is not None
+
+    def test_xray_correlation_nanoplot_renders(self):
+        df = pl.DataFrame({"x": [1.0, 2.0, 3.0], "y": [2.0, 4.0, 6.0]})
+
+        rendered = ps.xray(df, corr_target="x", great_tables=True).as_raw_html()
+
+        assert 'id="Correlation_Plot"' in rendered
+        assert rendered.count('<svg role="img"') == 3
     
     def test_xray_formatting_options(self):
         """Test all Great Tables formatting options."""
@@ -245,6 +253,7 @@ class TestXrayFunction:
 
         rendered = ps.xray(df, decimals=5).as_raw_html()
         assert "1.62346" in rendered
+        assert '<svg role="img"' in rendered
 
         with pytest.raises(ValueError, match="non-negative integer"):
             ps.xray(df, decimals=-1)
