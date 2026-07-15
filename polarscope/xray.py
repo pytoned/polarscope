@@ -1423,6 +1423,11 @@ def _float_format_columns(summary_df: pl.DataFrame) -> list[str]:
     ]
 
 
+def _format_nanoplot_value(value: float) -> str:
+    """Format a numeric nanoplot label with three significant digits."""
+    return format(value, ".3g")
+
+
 def _apply_nanoplots(gt_table: GT, has_hist_data: bool, has_corr_data: bool, distribution_plot: str) -> GT:
     """Apply histogram/correlation nanoplot formatting shared by both table modes."""
     # Histogram nanoplots for the Distribution_Plot column
@@ -1437,7 +1442,9 @@ def _apply_nanoplots(gt_table: GT, has_hist_data: bool, has_corr_data: bool, dis
                         data_bar_stroke_width=0,  # No gaps between bars (like histogram)
                         data_bar_fill_color="#4A90E2",
                         show_data_line=False,
-                        show_data_area=False
+                        show_data_area=False,
+                        y_val_fmt_fn=_format_nanoplot_value,
+                        y_axis_fmt_fn=_format_nanoplot_value,
                     )
                 )
         except ImportError:
@@ -1460,7 +1467,9 @@ def _apply_nanoplots(gt_table: GT, has_hist_data: bool, has_corr_data: bool, dis
                     data_bar_fill_color="#4A90E2",
                     data_bar_negative_fill_color="#E24A4A",  # Red for negative correlations
                     show_data_line=False,
-                    show_data_area=False
+                    show_data_area=False,
+                    y_val_fmt_fn=_format_nanoplot_value,
+                    y_axis_fmt_fn=_format_nanoplot_value,
                 )
             )
         except ImportError:

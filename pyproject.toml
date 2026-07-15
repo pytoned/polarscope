@@ -25,6 +25,11 @@ dependencies = [
 readme = "README.md"
 license = "MIT"
 
+[project.urls]
+Homepage = "https://github.com/pytoned/polarscope"
+Repository = "https://github.com/pytoned/polarscope"
+Issues = "https://github.com/pytoned/polarscope/issues"
+
 [project.optional-dependencies]
 plotly = ["kaleido>=0.2"]
 altair = ["altair>=5"]

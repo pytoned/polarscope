@@ -3,9 +3,11 @@
 from __future__ import annotations
 
 import builtins
+from datetime import datetime
 import importlib
 import sys
 import types
+import warnings
 
 import numpy as np
 import polars as pl
@@ -168,6 +170,75 @@ def test_xray_usability_columns_in_minimal_mode() -> None:
     ps.xray(df, include="all", model_usability=True)
 
 
+def test_model_usability_scores_match_recommendations_and_display_modes() -> None:
+    import polarscope as ps
+
+    constant = ps.xray(
+        pl.DataFrame({"constant": [1] * 20}),
+        model_usability=True,
+        great_tables=False,
+    ).row(0, named=True)
+    assert constant["Recommendation"] == "Drop - constant value"
+    assert constant["Usability_Score"] <= 20
+
+    binary = pl.DataFrame({"feature": [0.0, 1.0] * 50})
+    minimal = ps.xray(
+        binary,
+        model_usability=True,
+        great_tables=False,
+    ).row(0, named=True)
+    expanded = ps.xray(
+        binary,
+        expanded=True,
+        model_usability=True,
+        great_tables=False,
+    ).row(0, named=True)
+    assert minimal["Usability_Flags"] == expanded["Usability_Flags"]
+    assert minimal["Usability_Score"] == expanded["Usability_Score"]
+
+
+def test_id_detection_uses_name_tokens_and_dtype() -> None:
+    common = {
+        "N_Unique": 200,
+        "Count": 1000,
+        "null_count": 0,
+        "Uniqueness_Ratio": 0.2,
+        "Dtype": "Int64",
+    }
+    assert not xray_mod._is_likely_id_column("humidity", common)
+    assert xray_mod._is_likely_id_column("customer_id", common)
+    assert xray_mod._is_likely_id_column("customerId", common)
+
+    unique_float = {
+        **common,
+        "N_Unique": 1000,
+        "Uniqueness_Ratio": 1.0,
+        "Dtype": "Float64",
+    }
+    assert not xray_mod._is_likely_id_column("measurement", unique_float)
+
+
+def test_balanced_low_cardinality_column_is_not_quasi_constant() -> None:
+    score = xray_mod._calculate_shakiness_score(
+        {
+            "Pct_Missing": 0.0,
+            "N_Unique": 2,
+            "Uniqueness_Ratio": 0.0,
+            "skew": 0.0,
+            "Kurtosis": 0.0,
+            "Pct_Outliers": 0.0,
+            "Normality_Test": "",
+        },
+        missing_threshold=0.3,
+        constant_threshold=0.99,
+        skew_threshold=2.0,
+        kurtosis_threshold=7.0,
+        outlier_threshold=0.05,
+        mode_share=0.5,
+    )
+    assert score == 0
+
+
 def test_xray_categorical_boolean_temporal_coverage() -> None:
     """Categorical/Enum get string stats; Boolean gets 0/1 numeric stats; temporal gets min/max."""
     import polarscope as ps
@@ -223,6 +294,17 @@ def test_normality_ks_fallback_for_large_samples() -> None:
     assert "Kolmogorov-Smirnov" in result
 
 
+def test_anderson_normality_avoids_scipy_future_warning() -> None:
+    if not xray_mod._check_scipy_availability():
+        pytest.skip("scipy not available")
+
+    with warnings.catch_warnings():
+        warnings.simplefilter("error", FutureWarning)
+        result = xray_mod._test_normality([1.0, 2.0, 3.0, 4.0, 5.0], "anderson")
+
+    assert "Anderson-Darling" in result
+
+
 def test_string_stats_and_numeric_column_hiding() -> None:
     import polarscope as ps
 
@@ -255,13 +337,22 @@ def test_xray_internal_helpers() -> None:
             "num": [1, 2, 3],
             "txt": ["a", "b", "c"],
             "dt": pl.date_range(pl.date(2020, 1, 1), pl.date(2020, 1, 3), eager=True),
+            "ts": pl.Series(
+                [
+                    datetime(2020, 1, 1),
+                    datetime(2020, 1, 2),
+                    datetime(2020, 1, 3),
+                ],
+                dtype=pl.Datetime("us"),
+            ),
         }
     )
     assert xray_mod._get_columns_to_analyze(df, None) == ["num"]
-    assert set(xray_mod._get_columns_to_analyze(df, "all")) == {"num", "txt", "dt"}
+    assert set(xray_mod._get_columns_to_analyze(df, "all")) == {"num", "txt", "dt", "ts"}
     assert xray_mod._get_columns_to_analyze(df, "string") == ["txt"]
-    assert xray_mod._get_columns_to_analyze(df, "temporal") == ["dt"]
+    assert xray_mod._get_columns_to_analyze(df, "temporal") == ["dt", "ts"]
     assert xray_mod._get_columns_to_analyze(df, ["Int64"]) == ["num"]
+    assert xray_mod._get_columns_to_analyze(df, ["Datetime"]) == ["ts"]
     with pytest.raises(ValueError):
         xray_mod._get_columns_to_analyze(df, "invalid")
 
@@ -284,6 +375,7 @@ def test_xray_internal_helpers() -> None:
     assert xray_mod._count_outliers(outlier_series, "iqr", None) >= 1
     assert xray_mod._count_outliers(outlier_series, "percentile", [0.25, 0.75]) >= 1
     assert xray_mod._count_outliers(outlier_series, "zscore", None) >= 0
+    assert xray_mod._count_outliers(pl.Series([5.0]), "zscore", None) == 0
 
     nano_df = pl.DataFrame(
         {
@@ -332,6 +424,9 @@ def test_plots_core_helpers_and_drop_missing() -> None:
     with pytest.raises(ValueError):
         plots_mod.drop_missing(df, axis="rows", subset=["missing_col"])
 
+    with pytest.raises(ValueError, match="only supported when axis='rows'"):
+        plots_mod.drop_missing(df, axis="columns", subset=["a"])
+
     # Threshold uses ceil semantics; with one subset column and thresh=0.5,
     # rows with nulls in that subset should be removed.
     subset_df = pl.DataFrame({"a": [1, None], "b": [10, 20]})
@@ -343,11 +438,21 @@ def test_plots_core_helpers_and_drop_missing() -> None:
     kept_cols = plots_mod.drop_missing(empty_df, axis="columns", thresh=0.8)
     assert kept_cols.columns == ["x", "y"]
 
+    assert plots_mod.drop_missing(pl.DataFrame(), axis="rows").shape == (0, 0)
+
 
 def test_missingval_plot_sort_validation() -> None:
     df = pl.DataFrame({"a": [1, None], "b": [None, 2]})
     with pytest.raises(ValueError):
         plots_mod.missingval_plot(df, sort="invalid", backend="plotly")
+
+
+def test_missingval_plot_counts_nan_as_missing() -> None:
+    figure = plots_mod.missingval_plot(
+        pl.DataFrame({"value": [1.0, float("nan"), None]}),
+        backend="plotly",
+    )
+    assert list(figure.data[0].x) == [2]
 
 
 def test_altair_backend_has_actionable_missing_extra_error(
@@ -386,6 +491,28 @@ def test_cat_plot_true_bottom_values_and_validation() -> None:
 
     with pytest.raises(ValueError):
         plots_mod.cat_plot(df, top=-1, bottom=2, backend="plotly")
+
+
+def test_cat_plot_supports_enum_columns() -> None:
+    frame = pl.DataFrame(
+        {
+            "category": pl.Series(
+                ["a", "b", "a"],
+                dtype=pl.Enum(["a", "b"]),
+            )
+        }
+    )
+    figure = plots_mod.cat_plot(frame, backend="plotly")
+    assert len(figure.data) == 1
+
+
+def test_dist_plot_preserves_large_integer_values() -> None:
+    values = [2**53 + 1, 2**53 + 3]
+    figure = plots_mod.dist_plot(
+        pl.DataFrame({"value": values}),
+        backend="plotly",
+    )
+    assert list(figure.data[0].x) == values
 
 
 def test_corr_plot_respects_explicit_altair_backend() -> None:
