@@ -371,7 +371,7 @@
       <div class="reveal">
         <h3>Install &amp; x-ray</h3>
         <ul>
-          <li>Works with any Polars DataFrame or built-in dataset</li>
+          <li>Works with Polars DataFrames only</li>
           <li>Targeted correlations via <code>corr_target</code></li>
           <li>Choose your outlier method: IQR, percentile or z-score</li>
           <li>Render rich Great Tables or raw Polars output</li>
@@ -386,10 +386,10 @@
 <span class="tok-kw">import</span> polarscope <span class="tok-kw">as</span> ps
 <span class="tok-kw">from</span> polarscope.datasets <span class="tok-kw">import</span> titanic
 
-<span class="tok-com"># load a built-in dataset (or your own)</span>
-<span class="tok-var">df</span> = <span class="tok-fn">titanic</span>()
+<!--<span class="tok-com"># load a built-in dataset (or your own)</span> -->
+<!--<span class="tok-var">df</span> = ps.<span class="tok-fn">titanic</span>() -->
 
-<span class="tok-com"># the whole library, in one call</span>
+<!--<span class="tok-com"># the whole library, in one call</span> -->
 ps.<span class="tok-fn">xray</span>(<span class="tok-var">df</span>)
 
 <span class="tok-com"># go deeper: tests, outliers, correlations</span>

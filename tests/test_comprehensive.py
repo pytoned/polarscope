@@ -164,6 +164,16 @@ class TestXrayFunction:
 
         with pytest.raises(ValueError):
             ps.xray(df, great_tables=False, percentiles=[0.5, 1.1])
+
+        precise = ps.xray(
+            df,
+            great_tables=False,
+            percentiles=[0.251, 0.259],
+        )
+        assert {"25.1%", "25.9%"} <= set(precise.columns)
+
+        with pytest.raises(ValueError):
+            ps.xray(df, great_tables=False, percentiles=[float("nan")])
     
     def test_xray_outlier_methods(self):
         """Test all outlier detection methods."""
@@ -225,6 +235,19 @@ class TestXrayFunction:
         # Test compact with custom separators
         result = ps.xray(df, compact=True, sep_mark=" ", dec_mark=",")
         assert result is not None
+
+    def test_xray_decimal_precision_is_applied_only_when_rendering(self):
+        df = pl.DataFrame({"value": [1.123456, 2.123456]})
+
+        raw = ps.xray(df, great_tables=False)
+        assert raw["Mean"][0] == pytest.approx(1.623456)
+        assert raw["Mean"][0] != 1.623
+
+        rendered = ps.xray(df, decimals=5).as_raw_html()
+        assert "1.62346" in rendered
+
+        with pytest.raises(ValueError, match="non-negative integer"):
+            ps.xray(df, decimals=-1)
     
     def test_xray_quality_thresholds(self):
         """Test custom quality assessment thresholds."""
