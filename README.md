@@ -58,7 +58,7 @@ With `include="all"`, string and categorical columns get their own statistics al
 
 ## 🔍 How Polarscope compares
 
-| | **polarscope** 1.9.1 | skimpy 0.0.21 | ydata-profiling 4.18.4 | klib 1.4.1 |
+| | **polarscope** 1.9.2 | skimpy 0.0.21 | ydata-profiling 4.18.4 | klib 1.4.1 |
 |---|---|---|---|---|
 | Takes a Polars DataFrame directly | ✅ | ✅ | ❌ convert to pandas first | ❌ convert to pandas first |
 | Requires pandas | **❌ never** | ✅ hard dependency | ✅ | ✅ |
