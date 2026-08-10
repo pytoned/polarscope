@@ -2,11 +2,11 @@
 
 # 🔬 Polarscope
 
-**One call, one table: a full profile of any Polars DataFrame. No pandas, anywhere.**
+**One call, one table: a full profile of any Polars DataFrame. No pandas, anywhere, ever.**
 
 ```python
 import polarscope as ps
-ps.xray(df, compact=True)
+ps.xray(df)
 ```
 
 ![polarscope xray() profiling 70,000 rows in 21 ms](docs/img/xray-hero.png)
