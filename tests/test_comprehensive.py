@@ -211,13 +211,16 @@ class TestXrayFunction:
             result = ps.xray(df, corr_target=col, expanded=True)
             assert result is not None
 
-    def test_xray_correlation_nanoplot_renders(self):
+    def test_xray_correlation_plot_renders(self):
         df = pl.DataFrame({"x": [1.0, 2.0, 3.0], "y": [2.0, 4.0, 6.0]})
 
         rendered = ps.xray(df, corr_target="x", great_tables=True).as_raw_html()
 
-        assert 'id="Correlation_Plot"' in rendered
-        assert rendered.count('<svg role="img"') == 3
+        assert 'id="correlation_plot"' in rendered
+        # One histogram nanoplot per analyzed column...
+        assert rendered.count('<svg role="img"') == 2
+        # ...plus a fixed-scale correlation bar for the one non-target column.
+        assert rendered.count('class="ps-corr-track"') == 1
     
     def test_xray_formatting_options(self):
         """Test all Great Tables formatting options."""
@@ -248,8 +251,8 @@ class TestXrayFunction:
         df = pl.DataFrame({"value": [1.123456, 2.123456]})
 
         raw = ps.xray(df, great_tables=False)
-        assert raw["Mean"][0] == pytest.approx(1.623456)
-        assert raw["Mean"][0] != 1.623
+        assert raw["mean"][0] == pytest.approx(1.623456)
+        assert raw["mean"][0] != 1.623
 
         rendered = ps.xray(df, decimals=5).as_raw_html()
         assert "1.62346" in rendered
@@ -299,19 +302,19 @@ class TestXrayFunction:
         assert "std" in result_df.columns
         assert "Std" not in result_df.columns
 
-        txt_std = result_df.filter(pl.col("Column") == "txt").select("std").item()
+        txt_std = result_df.filter(pl.col("column") == "txt").select("std").item()
         assert txt_std is None
 
     def test_shakiness_uses_skew_key(self):
         """Shakiness score should increase when 'skew' crosses the configured threshold."""
         base_stats = {
-            "Pct_Missing": 0.0,
-            "Uniqueness_Ratio": 0.5,
-            "N_Unique": 20,
+            "pct_missing": 0.0,
+            "uniqueness_ratio": 0.5,
+            "n_unique": 20,
             "skew": 0.4,
-            "Kurtosis": 0.0,
-            "Pct_Outliers": 0.0,
-            "Normality_Test": "NORMAL",
+            "kurtosis": 0.0,
+            "pct_outliers": 0.0,
+            "normality_test": "NORMAL",
         }
 
         low_score = _calculate_shakiness_score(

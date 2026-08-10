@@ -266,7 +266,7 @@
       <div class="xray">
         <div class="xray-head">
           <h3>🔬 X-ray · titanic</h3>
-          <p>891 rows × 6 columns · generated with <code style="font-size:.78rem">ps.xray(df, expanded=True)</code></p>
+          <p>156 rows × 12 columns · 6 shown · generated with <code style="font-size:.78rem">ps.xray(df, expanded=True)</code></p>
         </div>
         <table class="xt">
           <thead>
@@ -277,42 +277,42 @@
               <td class="col-name">Survived</td>
               <td><span class="dtype">i64</span></td>
               <td><div class="miss"><div class="track"><div class="fill" style="width:0%"></div></div><span>0%</span></div></td>
-              <td><div class="nano"><i style="height:38%"></i><i style="height:100%"></i><i style="height:0"></i><i style="height:62%"></i></div></td>
-              <td><div class="dbar"><div class="bar" style="width:38px"></div><span class="val">0.38</span></div></td>
+              <td><div class="nano"><i style="height:100%"></i><i style="height:53%"></i></div></td>
+              <td><div class="dbar"><div class="bar" style="width:35px"></div><span class="val">0.35</span></div></td>
             </tr>
             <tr>
               <td class="col-name">Pclass</td>
               <td><span class="dtype">i64</span></td>
               <td><div class="miss"><div class="track"><div class="fill" style="width:0%"></div></div><span>0%</span></div></td>
-              <td><div class="nano"><i style="height:48%"></i><i style="height:30%"></i><i style="height:100%"></i></div></td>
-              <td><div class="dbar"><div class="bar" style="width:77px"></div><span class="val">2.31</span></div></td>
+              <td><div class="nano"><i style="height:31%"></i><i style="height:31%"></i><i style="height:100%"></i></div></td>
+              <td><div class="dbar"><div class="bar" style="width:81px"></div><span class="val">2.42</span></div></td>
             </tr>
             <tr>
               <td class="col-name">Age</td>
               <td><span class="dtype">f64</span></td>
-              <td><div class="miss"><div class="track"><div class="fill" style="width:20%"></div></div><span>19.9%</span></div></td>
-              <td><div class="nano"><i style="height:20%"></i><i style="height:55%"></i><i style="height:100%"></i><i style="height:78%"></i><i style="height:42%"></i><i style="height:22%"></i><i style="height:10%"></i></div></td>
-              <td><div class="dbar"><div class="bar" style="width:99px"></div><span class="val">29.7</span></div></td>
+              <td><div class="miss"><div class="track"><div class="fill" style="width:19%"></div></div><span>19.2%</span></div></td>
+              <td><div class="nano"><i style="height:25%"></i><i style="height:59%"></i><i style="height:100%"></i><i style="height:57%"></i><i style="height:18%"></i><i style="height:18%"></i><i style="height:9%"></i></div></td>
+              <td><div class="dbar"><div class="bar" style="width:94px"></div><span class="val">28.14</span></div></td>
             </tr>
             <tr>
               <td class="col-name">Fare</td>
               <td><span class="dtype">f64</span></td>
               <td><div class="miss"><div class="track"><div class="fill" style="width:0%"></div></div><span>0%</span></div></td>
-              <td><div class="nano"><i style="height:100%"></i><i style="height:40%"></i><i style="height:20%"></i><i style="height:12%"></i><i style="height:8%"></i><i style="height:6%"></i></div></td>
-              <td><div class="dbar"><div class="bar" style="width:108px"></div><span class="val">32.2</span></div></td>
+              <td><div class="nano"><i style="height:100%"></i><i style="height:16%"></i><i style="height:0"></i><i style="height:1%"></i><i style="height:0"></i><i style="height:2%"></i></div></td>
+              <td><div class="dbar"><div class="bar" style="width:94px"></div><span class="val">28.11</span></div></td>
             </tr>
             <tr>
               <td class="col-name">Sex</td>
               <td><span class="dtype">str</span></td>
               <td><div class="miss"><div class="track"><div class="fill" style="width:0%"></div></div><span>0%</span></div></td>
-              <td><div class="nano blue"><i style="height:65%"></i><i style="height:100%"></i></div></td>
+              <td><div class="nano blue"><i style="height:100%"></i><i style="height:56%"></i></div></td>
               <td><div class="dbar"><span class="val" style="color:var(--ink-300)">2 cats</span></div></td>
             </tr>
             <tr>
               <td class="col-name">Embarked</td>
               <td><span class="dtype">str</span></td>
-              <td><div class="miss"><div class="track"><div class="fill" style="width:2%"></div></div><span>0.2%</span></div></td>
-              <td><div class="nano blue"><i style="height:100%"></i><i style="height:26%"></i><i style="height:34%"></i></div></td>
+              <td><div class="miss"><div class="track"><div class="fill" style="width:2%"></div></div><span>0.6%</span></div></td>
+              <td><div class="nano blue"><i style="height:100%"></i><i style="height:29%"></i><i style="height:12%"></i></div></td>
               <td><div class="dbar"><span class="val" style="color:var(--ink-300)">3 cats</span></div></td>
             </tr>
           </tbody>
@@ -386,10 +386,10 @@
 <span class="tok-kw">import</span> polarscope <span class="tok-kw">as</span> ps
 <span class="tok-kw">from</span> polarscope.datasets <span class="tok-kw">import</span> titanic
 
-<!--<span class="tok-com"># load a built-in dataset (or your own)</span> -->
-<!--<span class="tok-var">df</span> = ps.<span class="tok-fn">titanic</span>() -->
+<span class="tok-com"># load a built-in dataset (or your own)</span>
+<span class="tok-var">df</span> = <span class="tok-fn">titanic</span>()
 
-<!--<span class="tok-com"># the whole library, in one call</span> -->
+<span class="tok-com"># the whole library, in one call</span>
 ps.<span class="tok-fn">xray</span>(<span class="tok-var">df</span>)
 
 <span class="tok-com"># go deeper: tests, outliers, correlations</span>

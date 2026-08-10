@@ -1,0 +1,111 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="640" viewBox="0 0 1280 640">
+<defs>
+  <radialGradient id="glow" cx="0.78" cy="0.12" r="0.75">
+    <stop offset="0" stop-color="#fcc2d7" stop-opacity="0.42"/>
+    <stop offset="0.6" stop-color="#ffe3ee" stop-opacity="0.18"/>
+    <stop offset="1" stop-color="#fff5f9" stop-opacity="0"/>
+  </radialGradient>
+  <linearGradient id="topline" x1="0" y1="0" x2="1" y2="0">
+    <stop offset="0" stop-color="#d6336c" stop-opacity="0.9"/>
+    <stop offset="0.55" stop-color="#e5447d" stop-opacity="0.75"/>
+    <stop offset="1" stop-color="#f783ac" stop-opacity="0.1"/>
+  </linearGradient>
+  <filter id="cardshadow" x="-25%" y="-25%" width="150%" height="150%">
+    <feDropShadow dx="0" dy="16" stdDeviation="20" flood-color="#b81d63" flood-opacity="0.16"/>
+  </filter>
+  <pattern id="grid" width="32" height="32" patternUnits="userSpaceOnUse">
+    <path d="M32 0 H0 V32" fill="none" stroke="#f783ac" stroke-opacity="0.18" stroke-width="1"/>
+  </pattern>
+</defs>
+
+<rect width="1280" height="640" fill="#fff5f9"/>
+<rect width="1280" height="640" fill="url(#grid)"/>
+<rect width="1280" height="640" fill="url(#glow)"/>
+
+<rect x="644" y="56" width="560" height="378" rx="18" fill="#ffffff" stroke="#efe3ea" stroke-width="1.25" filter="url(#cardshadow)"/>
+<path d="M660 57.6 H1188" stroke="url(#topline)" stroke-width="3"/>
+<g opacity="1.0" stroke="#d6336c" fill="none" stroke-linecap="round">
+  <circle cx="679" cy="89" r="9.5" stroke-width="1.35"/>
+  <circle cx="679" cy="89" r="4.18" stroke-width="1.08" opacity="0.6"/>
+  <path d="M679 77.505 V86.91 M679 91.09 V100.495
+           M667.505 89 H676.91 M681.09 89 H690.495"
+        stroke-width="1.15" opacity="0.8"/>
+  <circle cx="679" cy="89" r="1.00" fill="#d6336c" stroke="none"/>
+</g>
+<text x="698" y="94" font-family="JetBrains Mono" font-size="15.5" font-weight="700" fill="#1f2230">ps.xray(df)</text>
+<text x="1178" y="94" text-anchor="end" font-family="JetBrains Mono" font-size="13" fill="#aab0bf" letter-spacing="0.5">dataset: titanic</text>
+<text x="698" y="116" font-family="JetBrains Mono" font-size="11.5" fill="#6b7180" letter-spacing="0.2">156 rows × 12 columns · 9.3 KB in memory · x-rayed in 17 ms</text>
+<path d="M670 134 H1178" stroke="#efe3ea" stroke-width="1"/>
+<text x="670" y="158" text-anchor="start" font-family="JetBrains Mono" font-size="10.5" font-weight="700" fill="#d6336c" letter-spacing="1.6">COLUMN</text>
+<text x="794" y="158" text-anchor="start" font-family="JetBrains Mono" font-size="10.5" font-weight="700" fill="#d6336c" letter-spacing="1.6">TYPE</text>
+<text x="856" y="158" text-anchor="start" font-family="JetBrains Mono" font-size="10.5" font-weight="700" fill="#d6336c" letter-spacing="1.6">MISSING</text>
+<text x="942" y="158" text-anchor="start" font-family="JetBrains Mono" font-size="10.5" font-weight="700" fill="#d6336c" letter-spacing="1.6">DISTRIBUTION</text>
+<text x="1178" y="158" text-anchor="end" font-family="JetBrains Mono" font-size="10.5" font-weight="700" fill="#d6336c" letter-spacing="1.6">MEAN</text>
+<rect x="658" y="175" width="532" height="44" rx="9" fill="#f8f9fa"/>
+<text x="670" y="203" font-family="JetBrains Mono" font-size="15" font-weight="500" fill="#1f2230">survived</text>
+<text x="794" y="203" font-family="JetBrains Mono" font-size="12.5" fill="#6b7180">Int8</text>
+<text x="856" y="203" font-family="JetBrains Mono" font-size="12.5" fill="#aab0bf">0%</text>
+<path d="M942 211.5 H1080" stroke="#4a90e2" stroke-opacity="0.28" stroke-width="1"/><rect x="942.00" y="183.51" width="4.22" height="26.49" rx="1.20" fill="#4a90e2" opacity="0.89"/><rect x="947.82" y="183.90" width="4.22" height="26.10" rx="1.20" fill="#4a90e2" opacity="0.89"/><rect x="953.63" y="182.78" width="4.22" height="27.22" rx="1.20" fill="#4a90e2" opacity="0.91"/><rect x="959.45" y="184.08" width="4.22" height="25.92" rx="1.20" fill="#4a90e2" opacity="0.88"/><rect x="1058.33" y="194.63" width="4.22" height="15.37" rx="1.20" fill="#4a90e2" opacity="0.69"/><rect x="1064.15" y="195.77" width="4.22" height="14.23" rx="1.20" fill="#4a90e2" opacity="0.67"/><rect x="1069.97" y="194.77" width="4.22" height="15.23" rx="1.20" fill="#4a90e2" opacity="0.69"/><rect x="1075.78" y="195.48" width="4.22" height="14.52" rx="1.20" fill="#4a90e2" opacity="0.68"/>
+<text x="1178" y="203" text-anchor="end" font-family="JetBrains Mono" font-size="14" font-weight="500" fill="#3a3f52">0.35</text>
+<text x="670" y="253" font-family="JetBrains Mono" font-size="15" font-weight="500" fill="#1f2230">pclass</text>
+<text x="794" y="253" font-family="JetBrains Mono" font-size="12.5" fill="#6b7180">Int8</text>
+<text x="856" y="253" font-family="JetBrains Mono" font-size="12.5" fill="#aab0bf">0%</text>
+<path d="M942 261.5 H1080" stroke="#4a90e2" stroke-opacity="0.28" stroke-width="1"/><rect x="942.00" y="251.13" width="4.22" height="8.87" rx="1.20" fill="#4a90e2" opacity="0.58"/><rect x="947.82" y="251.15" width="4.22" height="8.85" rx="1.20" fill="#4a90e2" opacity="0.58"/><rect x="953.63" y="251.01" width="4.22" height="8.99" rx="1.20" fill="#4a90e2" opacity="0.58"/><rect x="959.45" y="250.62" width="4.22" height="9.38" rx="1.20" fill="#4a90e2" opacity="0.59"/><rect x="965.27" y="251.10" width="4.22" height="8.90" rx="1.20" fill="#4a90e2" opacity="0.58"/><rect x="1000.17" y="253.27" width="4.22" height="6.73" rx="1.20" fill="#4a90e2" opacity="0.54"/><rect x="1005.98" y="253.18" width="4.22" height="6.82" rx="1.20" fill="#4a90e2" opacity="0.54"/><rect x="1011.80" y="252.91" width="4.22" height="7.09" rx="1.20" fill="#4a90e2" opacity="0.55"/><rect x="1017.62" y="253.05" width="4.22" height="6.95" rx="1.20" fill="#4a90e2" opacity="0.54"/><rect x="1052.52" y="232.67" width="4.22" height="27.33" rx="1.20" fill="#4a90e2" opacity="0.91"/><rect x="1058.33" y="233.69" width="4.22" height="26.31" rx="1.20" fill="#4a90e2" opacity="0.89"/><rect x="1064.15" y="232.95" width="4.22" height="27.05" rx="1.20" fill="#4a90e2" opacity="0.90"/><rect x="1069.97" y="233.06" width="4.22" height="26.94" rx="1.20" fill="#4a90e2" opacity="0.90"/><rect x="1075.78" y="232.28" width="4.22" height="27.72" rx="1.20" fill="#4a90e2" opacity="0.92"/>
+<text x="1178" y="253" text-anchor="end" font-family="JetBrains Mono" font-size="14" font-weight="500" fill="#3a3f52">2.42</text>
+<rect x="658" y="275" width="532" height="44" rx="9" fill="#f8f9fa"/>
+<text x="670" y="303" font-family="JetBrains Mono" font-size="15" font-weight="500" fill="#1f2230">age</text>
+<text x="794" y="303" font-family="JetBrains Mono" font-size="12.5" fill="#6b7180">Float32</text>
+<text x="856" y="303" font-family="JetBrains Mono" font-size="12.5" fill="#e24a4a">19.2%</text>
+<rect x="856" y="310" width="10.8" height="3" rx="1.5" fill="#e24a4a" opacity="0.85"/>
+<path d="M942 311.5 H1080" stroke="#e24a4a" stroke-opacity="0.28" stroke-width="1"/><rect x="942.00" y="308.00" width="4.22" height="2.00" rx="1.20" fill="#e24a4a" opacity="0.45"/><rect x="947.82" y="307.16" width="4.22" height="2.84" rx="1.20" fill="#e24a4a" opacity="0.47"/><rect x="953.63" y="304.69" width="4.22" height="5.31" rx="1.20" fill="#e24a4a" opacity="0.51"/><rect x="959.45" y="301.97" width="4.22" height="8.03" rx="1.20" fill="#e24a4a" opacity="0.56"/><rect x="965.27" y="297.69" width="4.22" height="12.31" rx="1.20" fill="#e24a4a" opacity="0.64"/><rect x="971.08" y="292.60" width="4.22" height="17.40" rx="1.20" fill="#e24a4a" opacity="0.73"/><rect x="976.90" y="289.10" width="4.22" height="20.90" rx="1.20" fill="#e24a4a" opacity="0.79"/><rect x="982.72" y="284.99" width="4.22" height="25.01" rx="1.20" fill="#e24a4a" opacity="0.87"/><rect x="988.53" y="284.15" width="4.22" height="25.85" rx="1.20" fill="#e24a4a" opacity="0.88"/><rect x="994.35" y="282.82" width="4.22" height="27.18" rx="1.20" fill="#e24a4a" opacity="0.91"/><rect x="1000.17" y="284.27" width="4.22" height="25.73" rx="1.20" fill="#e24a4a" opacity="0.88"/><rect x="1005.98" y="287.12" width="4.22" height="22.88" rx="1.20" fill="#e24a4a" opacity="0.83"/><rect x="1011.80" y="289.12" width="4.22" height="20.88" rx="1.20" fill="#e24a4a" opacity="0.79"/><rect x="1017.62" y="292.41" width="4.22" height="17.59" rx="1.20" fill="#e24a4a" opacity="0.73"/><rect x="1023.43" y="294.47" width="4.22" height="15.53" rx="1.20" fill="#e24a4a" opacity="0.70"/><rect x="1029.25" y="297.76" width="4.22" height="12.24" rx="1.20" fill="#e24a4a" opacity="0.64"/><rect x="1035.07" y="301.32" width="4.22" height="8.68" rx="1.20" fill="#e24a4a" opacity="0.57"/><rect x="1040.88" y="304.71" width="4.22" height="5.29" rx="1.20" fill="#e24a4a" opacity="0.51"/><rect x="1046.70" y="307.13" width="4.22" height="2.87" rx="1.20" fill="#e24a4a" opacity="0.47"/>
+<text x="1178" y="303" text-anchor="end" font-family="JetBrains Mono" font-size="14" font-weight="500" fill="#3a3f52">28.14</text>
+<text x="670" y="353" font-family="JetBrains Mono" font-size="15" font-weight="500" fill="#1f2230">sib_sp</text>
+<text x="794" y="353" font-family="JetBrains Mono" font-size="12.5" fill="#6b7180">Int8</text>
+<text x="856" y="353" font-family="JetBrains Mono" font-size="12.5" fill="#aab0bf">0%</text>
+<path d="M942 361.5 H1080" stroke="#4a90e2" stroke-opacity="0.28" stroke-width="1"/><rect x="942.00" y="332.79" width="4.22" height="27.21" rx="1.20" fill="#4a90e2" opacity="0.91"/><rect x="947.82" y="332.02" width="4.22" height="27.98" rx="1.20" fill="#4a90e2" opacity="0.92"/><rect x="953.63" y="353.24" width="4.22" height="6.76" rx="1.20" fill="#4a90e2" opacity="0.54"/><rect x="959.45" y="355.33" width="4.22" height="4.67" rx="1.20" fill="#4a90e2" opacity="0.50"/><rect x="965.27" y="356.60" width="4.22" height="3.40" rx="1.20" fill="#4a90e2" opacity="0.48"/><rect x="971.08" y="357.49" width="4.22" height="2.51" rx="1.20" fill="#4a90e2" opacity="0.46"/><rect x="976.90" y="358.00" width="4.22" height="2.00" rx="1.20" fill="#4a90e2" opacity="0.45"/>
+<text x="1178" y="353" text-anchor="end" font-family="JetBrains Mono" font-size="14" font-weight="500" fill="#3a3f52">0.62</text>
+<rect x="658" y="375" width="532" height="44" rx="9" fill="#f8f9fa"/>
+<text x="670" y="403" font-family="JetBrains Mono" font-size="15" font-weight="500" fill="#1f2230">fare</text>
+<text x="794" y="403" font-family="JetBrains Mono" font-size="12.5" fill="#6b7180">Float64</text>
+<text x="856" y="403" font-family="JetBrains Mono" font-size="12.5" fill="#aab0bf">0%</text>
+<path d="M942 411.5 H1080" stroke="#4a90e2" stroke-opacity="0.28" stroke-width="1"/><rect x="942.00" y="383.44" width="4.22" height="26.56" rx="1.20" fill="#4a90e2" opacity="0.89"/><rect x="947.82" y="388.25" width="4.22" height="21.75" rx="1.20" fill="#4a90e2" opacity="0.81"/><rect x="953.63" y="392.85" width="4.22" height="17.15" rx="1.20" fill="#4a90e2" opacity="0.73"/><rect x="959.45" y="397.43" width="4.22" height="12.57" rx="1.20" fill="#4a90e2" opacity="0.64"/><rect x="965.27" y="400.12" width="4.22" height="9.88" rx="1.20" fill="#4a90e2" opacity="0.60"/><rect x="971.08" y="402.21" width="4.22" height="7.79" rx="1.20" fill="#4a90e2" opacity="0.56"/><rect x="976.90" y="403.83" width="4.22" height="6.17" rx="1.20" fill="#4a90e2" opacity="0.53"/><rect x="982.72" y="404.89" width="4.22" height="5.11" rx="1.20" fill="#4a90e2" opacity="0.51"/><rect x="988.53" y="405.57" width="4.22" height="4.43" rx="1.20" fill="#4a90e2" opacity="0.50"/><rect x="994.35" y="406.07" width="4.22" height="3.93" rx="1.20" fill="#4a90e2" opacity="0.49"/><rect x="1000.17" y="406.48" width="4.22" height="3.52" rx="1.20" fill="#4a90e2" opacity="0.48"/><rect x="1005.98" y="406.92" width="4.22" height="3.08" rx="1.20" fill="#4a90e2" opacity="0.48"/><rect x="1011.80" y="407.70" width="4.22" height="2.30" rx="1.20" fill="#4a90e2" opacity="0.46"/><rect x="1017.62" y="408.00" width="4.22" height="2.00" rx="1.20" fill="#4a90e2" opacity="0.45"/>
+<text x="1178" y="403" text-anchor="end" font-family="JetBrains Mono" font-size="14" font-weight="500" fill="#3a3f52">28.11</text>
+<g opacity="1.0" stroke="#d6336c" fill="none" stroke-linecap="round">
+  <circle cx="88" cy="96" r="12" stroke-width="1.5"/>
+  <circle cx="88" cy="96" r="5.28" stroke-width="1.20" opacity="0.6"/>
+  <path d="M88 81.48 V93.36 M88 98.64 V110.52
+           M73.48 96 H85.36 M90.64 96 H102.52"
+        stroke-width="1.27" opacity="0.8"/>
+  <circle cx="88" cy="96" r="1.08" fill="#d6336c" stroke="none"/>
+</g>
+<text x="114" y="102" font-family="JetBrains Mono" font-size="12.5" font-weight="700" fill="#d6336c" letter-spacing="3.2">POLARS-NATIVE · NO PANDAS</text>
+<text x="76" y="196" font-family="Space Grotesk" font-size="76" font-weight="700" letter-spacing="-2.2" fill="#1f2230">Polar<tspan fill="#d6336c">scope</tspan></text>
+<text x="78" y="242" font-family="Space Grotesk" font-size="20.5" font-weight="500" fill="#3a3f52">Inspect, clean and visualize Polars DataFrames</text>
+<text x="78" y="270" font-family="Space Grotesk" font-size="20.5" font-weight="300" fill="#6b7180">— one import, Great Tables output, no Pandas.</text>
+<rect x="76" y="308" width="322" height="54" rx="12" fill="#ffffff" stroke="#fcc2d7" stroke-width="1.5"/>
+<text x="96" y="342" font-family="JetBrains Mono" font-size="17" fill="#f06595">$</text>
+<text x="116" y="342" font-family="JetBrains Mono" font-size="17" font-weight="500" fill="#1f2230">pip install polarscope</text>
+<text x="78" y="396" font-family="JetBrains Mono" font-size="12.5" fill="#6b7180" letter-spacing="0.3">Built-in datasets · titanic · diabetes · cardio</text>
+<rect x="0" y="452" width="1280" height="188" fill="#ffffff"/>
+<path d="M0 452.5 H1280" stroke="#efe3ea" stroke-width="1.5"/>
+<path d="M76 486 H106" stroke="#f06595" stroke-width="2.5"/>
+<text x="118" y="491" font-family="JetBrains Mono" font-size="11" font-weight="700" fill="#d6336c" letter-spacing="2.4">INSPECT</text>
+<text x="76" y="526" font-family="JetBrains Mono" font-size="17.5" font-weight="700" fill="#1f2230">ps.xray(df)</text>
+<text x="76" y="556" font-family="Space Grotesk" font-size="14.5" font-weight="300" fill="#6b7180">Summary stats for every dtype, distribution</text>
+<text x="76" y="578" font-family="Space Grotesk" font-size="14.5" font-weight="300" fill="#6b7180">nanoplots, outliers, normality tests and</text>
+<text x="76" y="600" font-family="Space Grotesk" font-size="14.5" font-weight="300" fill="#6b7180">correlations — Great Tables or Polars output.</text>
+<path d="M460 486 H490" stroke="#f06595" stroke-width="2.5"/>
+<text x="502" y="491" font-family="JetBrains Mono" font-size="11" font-weight="700" fill="#d6336c" letter-spacing="2.4">CLEAN</text>
+<text x="460" y="526" font-family="JetBrains Mono" font-size="17.5" font-weight="700" fill="#1f2230">ps.fix(df)</text>
+<text x="460" y="556" font-family="Space Grotesk" font-size="14.5" font-weight="300" fill="#6b7180">Rename to snake_case, strip whitespace, shrink</text>
+<text x="460" y="578" font-family="Space Grotesk" font-size="14.5" font-weight="300" fill="#6b7180">dtypes and drop empty columns in one call —</text>
+<text x="460" y="600" font-family="Space Grotesk" font-size="14.5" font-weight="300" fill="#6b7180">with a report of everything that changed.</text>
+<path d="M844 486 H874" stroke="#f06595" stroke-width="2.5"/>
+<text x="886" y="491" font-family="JetBrains Mono" font-size="11" font-weight="700" fill="#d6336c" letter-spacing="2.4">VISUALIZE</text>
+<text x="844" y="526" font-family="JetBrains Mono" font-size="17.5" font-weight="700" fill="#1f2230">ps.dist_plot(df)</text>
+<text x="844" y="556" font-family="Space Grotesk" font-size="14.5" font-weight="300" fill="#6b7180">Plus corr_heatmap, corr_plot, cat_plot and</text>
+<text x="844" y="578" font-family="Space Grotesk" font-size="14.5" font-weight="300" fill="#6b7180">missingval_plot — Plotly or Altair backends,</text>
+<text x="844" y="600" font-family="Space Grotesk" font-size="14.5" font-weight="300" fill="#6b7180">exported with save_fig.</text>
+
+<rect x="0.5" y="0.5" width="1279" height="639" fill="none" stroke="#fcc2d7" stroke-width="1"/>
+</svg>
