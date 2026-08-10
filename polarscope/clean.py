@@ -9,9 +9,11 @@ Public functions:
 """
 
 from __future__ import annotations
+
 import math
 import re
 import unicodedata
+
 import polars as pl
 
 # Case styles accepted by clean_column_names / fix

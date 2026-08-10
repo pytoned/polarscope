@@ -1,13 +1,15 @@
 from __future__ import annotations
+
 import inspect
 import math
-from numbers import Real
-from collections.abc import Iterable
 import re
+import time
+from collections.abc import Iterable
+from numbers import Real
+from typing import Any, Union
+
 import polars as pl
 from great_tables import GT
-from typing import Any, Union
-import time
 
 # Optional scipy imports - lazy loaded to avoid import warnings
 SCIPY_AVAILABLE = None  # Will be checked when needed

@@ -1,6 +1,7 @@
 
 from __future__ import annotations
 
+
 def save_fig(obj, path: str, *, scale: float = 1.0):
     """
     Save a figure/chart to disk.

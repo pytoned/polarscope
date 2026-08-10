@@ -5,8 +5,9 @@ This module provides easy access to built-in datasets for testing and demonstrat
 of Polarscope functionality.
 """
 
-import polars as pl
 from pathlib import Path
+
+import polars as pl
 
 
 def _normalize_dataset_relative_path(filename: str) -> Path:
