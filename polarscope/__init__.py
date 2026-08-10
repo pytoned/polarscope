@@ -1,12 +1,9 @@
+from . import clean, datasets, plots, utils
 from .clean import clean_column_names, convert_datatypes, drop_missing, fix
-from .plots import corr_heatmap, dist_plot, missingval_plot, cat_plot, corr_plot
+from .datasets import cardio, diabetes, titanic
+from .plots import cat_plot, corr_heatmap, corr_plot, dist_plot, missingval_plot
 from .utils import save_fig
 from .xray import xray
-from . import datasets
-from .datasets import titanic, diabetes, cardio
-from . import clean
-from . import plots
-from . import utils
 
 __all__ = [
     "cardio",               # Built-in Cardiovascular Disease dataset loader
@@ -28,7 +25,7 @@ __all__ = [
     "utils",                # Utility functions module
     "xray",                 # Main data inspection function
 ]
-__version__ = "1.9.1"
+__version__ = "1.9.2"
 
 # Package metadata
 __title__ = "polarscope"

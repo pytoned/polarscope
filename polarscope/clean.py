@@ -9,9 +9,11 @@ Public functions:
 """
 
 from __future__ import annotations
+
 import math
 import re
 import unicodedata
+
 import polars as pl
 
 # Case styles accepted by clean_column_names / fix
@@ -136,7 +138,10 @@ def convert_datatypes(
     str_to_cat : bool, default True
         Convert eligible string columns to categorical.
     downcast_ints : bool, default True
-        Downcast integer columns to smallest possible type.
+        Downcast integer columns to the smallest signed type that fits.
+        Unsigned columns are converted to signed as well, because unsigned
+        dtypes wrap on subtraction (0 - 1 -> 255) instead of promoting.
+        UInt64 values above the Int64 maximum are left untouched.
     downcast_floats : bool, default True
         Downcast float columns to smallest possible type.
 
@@ -169,20 +174,23 @@ def convert_datatypes(
             if min_val is None or max_val is None:
                 continue  # all-null column
 
-            if min_val >= 0:
-                if max_val <= 255:
-                    transformations.append(pl.col(col).cast(pl.UInt8).alias(col))
-                elif max_val <= 65535:
-                    transformations.append(pl.col(col).cast(pl.UInt16).alias(col))
-                elif max_val <= 4294967295:
-                    transformations.append(pl.col(col).cast(pl.UInt32).alias(col))
+            # Signed targets only. Unsigned dtypes wrap on subtraction
+            # (0 - 1 -> 255) instead of promoting, which silently corrupts data
+            # downstream, so unsigned input columns are converted to signed too.
+            if -128 <= min_val and max_val <= 127:
+                target = pl.Int8
+            elif -32768 <= min_val and max_val <= 32767:
+                target = pl.Int16
+            elif -2147483648 <= min_val and max_val <= 2147483647:
+                target = pl.Int32
+            elif -9223372036854775808 <= min_val and max_val <= 9223372036854775807:
+                target = pl.Int64
             else:
-                if min_val >= -128 and max_val <= 127:
-                    transformations.append(pl.col(col).cast(pl.Int8).alias(col))
-                elif min_val >= -32768 and max_val <= 32767:
-                    transformations.append(pl.col(col).cast(pl.Int16).alias(col))
-                elif min_val >= -2147483648 and max_val <= 2147483647:
-                    transformations.append(pl.col(col).cast(pl.Int32).alias(col))
+                # UInt64 values above the Int64 maximum cannot be made signed.
+                target = None
+
+            if target is not None and target != dtype:
+                transformations.append(pl.col(col).cast(target).alias(col))
             continue
 
         if downcast_floats and dtype.is_float():
@@ -329,7 +337,8 @@ def fix(
         Trim whitespace in string columns; empty/whitespace-only -> null.
     shrink_dtypes : bool, default True
         Downcast ints/floats and convert low-cardinality strings to
-        Categorical (via convert_datatypes; handles nulls).
+        Categorical (via convert_datatypes; handles nulls). Integers always
+        land on signed dtypes, so arithmetic on the result cannot wrap.
     drop_empty_columns : bool, default True
         Drop columns where every value is null.
     drop_duplicate_rows : bool, default False

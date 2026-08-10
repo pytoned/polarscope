@@ -58,7 +58,7 @@ class TestFix:
         assert "empty_col" not in out.columns
         assert out.height == df.height
         # dtypes shrunk (with nulls present - regression for the null-skip bug)
-        assert out.schema["arlig_inntekt_kr"] == pl.UInt16
+        assert out.schema["arlig_inntekt_kr"] == pl.Int32
         assert out.schema["my_column_name"] == pl.Float32
         # original never mutated
         assert df.columns[0] == "Kunde Navn"
@@ -115,9 +115,51 @@ class TestFix:
         assert capsys.readouterr().out == ""
 
     def test_clean_frame_reports_nothing_to_fix(self, capsys):
-        df = pl.DataFrame({"a": pl.Series([1, 2], dtype=pl.UInt8)})
+        df = pl.DataFrame({"a": pl.Series([1, 2], dtype=pl.Int8)})
         ps.fix(df)
         assert "Nothing to fix" in capsys.readouterr().out
+
+
+class TestSignedIntegerDowncast:
+    """Integer downcasting stays inside the signed family.
+
+    Unsigned dtypes wrap on subtraction (0 - 1 -> 255), which silently corrupts
+    data downstream, so convert_datatypes()/fix() never emit them and convert
+    any unsigned input columns to signed.
+    """
+
+    def test_non_negative_ints_downcast_to_signed(self):
+        out = ps.convert_datatypes(pl.DataFrame({"score": [10, 20, 30]}))
+        assert out.schema["score"] == pl.Int8
+
+    def test_downcast_survives_subtraction(self):
+        out = ps.convert_datatypes(pl.DataFrame({"score": [10, 20, 30]}))
+        assert out.select(pl.col("score") - 100)["score"].to_list() == [-90, -80, -70]
+
+    def test_existing_unsigned_columns_become_signed(self):
+        df = pl.DataFrame({"a": pl.Series([1, 2, 3], dtype=pl.UInt8)})
+        out = ps.convert_datatypes(df)
+        assert out.schema["a"] == pl.Int8
+        assert out["a"].to_list() == [1, 2, 3]
+
+    def test_unsigned_widens_when_values_exceed_signed_range(self):
+        # 255 does not fit in Int8, so the next signed type up is used
+        df = pl.DataFrame({"a": pl.Series([0, 255], dtype=pl.UInt8)})
+        out = ps.convert_datatypes(df)
+        assert out.schema["a"] == pl.Int16
+        assert out["a"].to_list() == [0, 255]
+
+    def test_uint64_beyond_int64_range_is_left_unchanged(self):
+        big = 2**63 + 5  # does not fit in Int64, so it cannot be made signed
+        df = pl.DataFrame({"a": pl.Series([0, big], dtype=pl.UInt64)})
+        out = ps.convert_datatypes(df)
+        assert out.schema["a"] == pl.UInt64
+        assert out["a"].to_list() == [0, big]
+
+    def test_fix_never_yields_unsigned_columns(self):
+        out = ps.fix(pl.DataFrame({"Survived": [0, 1, 1, 0]}), verbose=False)
+        assert out.schema["survived"] == pl.Int8
+        assert out.select(pl.col("survived") - 1)["survived"].to_list() == [-1, 0, 0, -1]
 
 
 class TestBackwardCompat:
@@ -133,6 +175,6 @@ class TestBackwardCompat:
     def test_convert_datatypes_shrinks_columns_with_nulls(self):
         df = pl.DataFrame({"x": [1, 2, None, 200], "s": ["a", "a", None, "b"]})
         out = ps.convert_datatypes(df)
-        assert out.schema["x"] == pl.UInt8
+        assert out.schema["x"] == pl.Int16
         assert out.schema["s"] == pl.Categorical
         assert out["x"].null_count() == 1

@@ -125,7 +125,7 @@ def test_xray_quasi_constant_and_distribution_validation() -> None:
     # A value covering >= constant_threshold of the column is flagged quasi-constant.
     df_const = pl.DataFrame({"x": [1] * 99 + [2]})
     out = ps.xray(df_const, include="all", expanded=True, great_tables=False)
-    assert out["Quality_Flag"][0] == "⚠ SHAKY"
+    assert out["quality_flag"][0] == "⚠ SHAKY"
 
     # distribution_plot only supports "histogram".
     with pytest.raises(ValueError):
@@ -141,7 +141,7 @@ def test_xray_model_usability_with_non_numeric_columns() -> None:
         df, include="all", expanded=True, model_usability=True,
         corr_target="num", great_tables=False,
     )
-    assert "Usability_Score" in out.columns
+    assert "usability_score" in out.columns
     assert out.height == 2
 
 
@@ -164,7 +164,7 @@ def test_xray_usability_columns_in_minimal_mode() -> None:
 
     df = pl.DataFrame({"num": [1.0, 2.0, 3.0, 4.0], "txt": ["a", "b", "a", "c"]})
     out = ps.xray(df, include="all", model_usability=True, great_tables=False)
-    for col in ["Usability_Flags", "Usability_Score", "Recommendation"]:
+    for col in ["usability_flags", "usability_score", "recommendation"]:
         assert col in out.columns
     # GT rendering with usability columns in minimal mode must not raise
     ps.xray(df, include="all", model_usability=True)
@@ -178,8 +178,8 @@ def test_model_usability_scores_match_recommendations_and_display_modes() -> Non
         model_usability=True,
         great_tables=False,
     ).row(0, named=True)
-    assert constant["Recommendation"] == "Drop - constant value"
-    assert constant["Usability_Score"] <= 20
+    assert constant["recommendation"] == "Drop - constant value"
+    assert constant["usability_score"] <= 20
 
     binary = pl.DataFrame({"feature": [0.0, 1.0] * 50})
     minimal = ps.xray(
@@ -193,17 +193,17 @@ def test_model_usability_scores_match_recommendations_and_display_modes() -> Non
         model_usability=True,
         great_tables=False,
     ).row(0, named=True)
-    assert minimal["Usability_Flags"] == expanded["Usability_Flags"]
-    assert minimal["Usability_Score"] == expanded["Usability_Score"]
+    assert minimal["usability_flags"] == expanded["usability_flags"]
+    assert minimal["usability_score"] == expanded["usability_score"]
 
 
 def test_id_detection_uses_name_tokens_and_dtype() -> None:
     common = {
-        "N_Unique": 200,
-        "Count": 1000,
+        "n_unique": 200,
+        "count": 1000,
         "null_count": 0,
-        "Uniqueness_Ratio": 0.2,
-        "Dtype": "Int64",
+        "uniqueness_ratio": 0.2,
+        "dtype": "Int64",
     }
     assert not xray_mod._is_likely_id_column("humidity", common)
     assert xray_mod._is_likely_id_column("customer_id", common)
@@ -211,9 +211,9 @@ def test_id_detection_uses_name_tokens_and_dtype() -> None:
 
     unique_float = {
         **common,
-        "N_Unique": 1000,
-        "Uniqueness_Ratio": 1.0,
-        "Dtype": "Float64",
+        "n_unique": 1000,
+        "uniqueness_ratio": 1.0,
+        "dtype": "Float64",
     }
     assert not xray_mod._is_likely_id_column("measurement", unique_float)
 
@@ -221,13 +221,13 @@ def test_id_detection_uses_name_tokens_and_dtype() -> None:
 def test_balanced_low_cardinality_column_is_not_quasi_constant() -> None:
     score = xray_mod._calculate_shakiness_score(
         {
-            "Pct_Missing": 0.0,
-            "N_Unique": 2,
-            "Uniqueness_Ratio": 0.0,
+            "pct_missing": 0.0,
+            "n_unique": 2,
+            "uniqueness_ratio": 0.0,
             "skew": 0.0,
-            "Kurtosis": 0.0,
-            "Pct_Outliers": 0.0,
-            "Normality_Test": "",
+            "kurtosis": 0.0,
+            "pct_outliers": 0.0,
+            "normality_test": "",
         },
         missing_threshold=0.3,
         constant_threshold=0.99,
@@ -251,22 +251,22 @@ def test_xray_categorical_boolean_temporal_coverage() -> None:
     })
 
     out = ps.xray(df, include="all", expanded=True, great_tables=False).to_dicts()
-    by_col = {r["Column"]: r for r in out}
+    by_col = {r["column"]: r for r in out}
 
     # Categorical/Enum are analyzed as strings
-    assert by_col["cat"]["Top"] == "a" and by_col["cat"]["Top_Freq"] == 3
-    assert by_col["enum"]["Top_Freq"] == 2
+    assert by_col["cat"]["top"] == "a" and by_col["cat"]["top_freq"] == 3
+    assert by_col["enum"]["top_freq"] == 2
 
     # Boolean is analyzed as 0/1 numeric: Mean = share of True
-    assert by_col["flag"]["Mean"] == 0.75
-    assert by_col["flag"]["Min"] == 0.0 and by_col["flag"]["Max"] == 1.0
+    assert by_col["flag"]["mean"] == 0.75
+    assert by_col["flag"]["min"] == 0.0 and by_col["flag"]["max"] == 1.0
 
     # Temporal columns report earliest/latest
-    assert by_col["when"]["Earliest"].startswith("2024-01-01")
-    assert by_col["when"]["Latest"].startswith("2024-01-04")
+    assert by_col["when"]["earliest"].startswith("2024-01-01")
+    assert by_col["when"]["latest"].startswith("2024-01-04")
 
     # include='string' matches Categorical/Enum
-    string_cols = ps.xray(df, include="string", great_tables=False)["Column"].to_list()
+    string_cols = ps.xray(df, include="string", great_tables=False)["column"].to_list()
     assert set(string_cols) == {"cat", "enum"}
 
     # GT rendering of the mixed frame must not raise in either mode
@@ -281,8 +281,8 @@ def test_xray_null_aware_duplicate_semantics() -> None:
     # 4 valid all-unique values + 4 nulls: no duplicates, ratio 1.0
     df = pl.DataFrame({"x": [1.0, 2.0, 3.0, 4.0, None, None, None, None]})
     row = ps.xray(df, expanded=True, great_tables=False).to_dicts()[0]
-    assert row["N_Duplicates"] == 0
-    assert row["Uniqueness_Ratio"] == 1.0
+    assert row["n_duplicates"] == 0
+    assert row["uniqueness_ratio"] == 1.0
 
 
 def test_normality_ks_fallback_for_large_samples() -> None:
@@ -312,23 +312,284 @@ def test_string_stats_and_numeric_column_hiding() -> None:
 
     # Expanded string view exposes the richer string stats...
     out = ps.xray(df, include="string", expanded=True, great_tables=False)
-    for col in ["Min_Length", "Median_Length", "Max_Length", "Mode_Share", "Top_3", "Sample_Vals"]:
+    for col in ["min_length", "median_length", "max_length", "mode_share", "top_3", "sample_vals"]:
         assert col in out.columns
     # ...and drops numeric-only stats entirely when no numeric column is analyzed.
-    for col in ["Mean", "std", "skew", "N_Outliers", "Normality_Test", "25%"]:
+    for col in ["mean", "std", "skew", "n_outliers", "normality_test", "25%"]:
         assert col not in out.columns
 
     # Minimal string view shows length defaults but not the expanded-only extras.
     minimal = ps.xray(df, include="string", great_tables=False)
-    assert {"Min_Length", "Median_Length", "Max_Length"} <= set(minimal.columns)
-    assert "Mode_Share" not in minimal.columns
-    assert "Top_3" not in minimal.columns
+    assert {"min_length", "median_length", "max_length"} <= set(minimal.columns)
+    assert "mode_share" not in minimal.columns
+    assert "top_3" not in minimal.columns
 
     # A row's stats are correct.
-    prov = out.filter(pl.col("Column") == "prov")
-    assert prov["Min_Length"][0] == 1
-    assert prov["Max_Length"][0] == 3
-    assert prov["Mode_Share"][0] == 60.0  # "a" appears 60 of 100
+    prov = out.filter(pl.col("column") == "prov")
+    assert prov["min_length"][0] == 1
+    assert prov["max_length"][0] == 3
+    assert prov["mode_share"][0] == 60.0  # "a" appears 60 of 100
+
+
+def test_iqr_column_omitted_when_percentiles_exclude_quartiles() -> None:
+    """IQR needs both the 25th and 75th percentile; without them it must not appear.
+
+    The non-numeric branch used to seed IQR with None unconditionally, so a
+    string column resurrected an all-null IQR column that numeric-only frames
+    correctly omitted.
+    """
+    import polarscope as ps
+
+    df = pl.DataFrame({"num": [1.0, 2.0, 3.0, 4.0, 5.0], "txt": ["a", "b", "a", "c", "b"]})
+
+    out = ps.xray(df, include="all", percentiles=[0.1, 0.9], great_tables=False)
+    assert "iqr" not in out.columns
+
+    # ...but the default percentiles still produce a real IQR.
+    default = ps.xray(df, include="all", great_tables=False)
+    assert "iqr" in default.columns
+    assert default.filter(pl.col("column") == "num")["iqr"][0] == 2.0
+
+
+def test_correlation_columns_omitted_when_nothing_can_correlate() -> None:
+    """corr_target must not emit all-null Correlation columns.
+
+    String columns are never correlated with the target, so include='string'
+    (or a frame whose only numeric column is the target itself) produced an
+    entirely empty Correlation / Correlation_Plot pair.
+    """
+    import polarscope as ps
+
+    df = pl.DataFrame(
+        {
+            "num": [1.0, 2.0, 3.0, 4.0, 5.0],
+            "txt": ["a", "b", "a", "c", "b"],
+            "target": [0, 1, 0, 1, 1],
+        }
+    )
+
+    # No numeric column is analyzed -> nothing to correlate.
+    strings = ps.xray(df, include="string", corr_target="target", great_tables=False)
+    assert "correlation" not in strings.columns
+    assert "correlation_plot" not in strings.columns
+
+    # Target is the only numeric column -> still nothing to correlate, both modes.
+    only_target = pl.DataFrame({"target": [0, 1, 0, 1], "txt": ["a", "b", "a", "c"]})
+    for expanded in (False, True):
+        out = ps.xray(
+            only_target, include="all", expanded=expanded,
+            corr_target="target", great_tables=False,
+        )
+        assert "correlation" not in out.columns, f"expanded={expanded}"
+        assert "correlation_plot" not in out.columns, f"expanded={expanded}"
+
+    # A genuine correlation is still reported.
+    real = ps.xray(df, include="all", corr_target="target", great_tables=False)
+    assert "correlation" in real.columns
+    assert real.filter(pl.col("column") == "num")["correlation"][0] is not None
+
+
+def _corr_cells(frame: pl.DataFrame) -> dict[str, str]:
+    """{column name: rendered Correlation_Plot cell HTML} for an xray table."""
+    import re
+
+    import polarscope as ps
+
+    html = ps.xray(frame, include="all", corr_target="target").as_raw_html()
+    cells = {}
+    for row in re.findall(r"<tr.*?</tr>", html, re.S):
+        name = re.search(r'<td[^>]*>([A-Za-z_]\w*)</td>', row)
+        track = re.search(r'<div class="ps-corr-track".*?</div></div>', row, re.S)
+        if name:
+            cells[name.group(1)] = track.group(0) if track else row
+    return cells
+
+
+def _bar_px(cell: str) -> tuple[float, float, str]:
+    """(track width, bar width, bar colour) parsed out of a rendered bar cell."""
+    import re
+
+    track_w = float(re.search(r'width:([\d.]+)px;height', cell).group(1))
+    bar = re.search(r'class="ps-corr-bar"[^>]*?width:([\d.]+)px[^>]*?background:(#\w+)', cell)
+    return track_w, float(bar.group(1)), bar.group(2)
+
+
+def _xray_frame(df: pl.DataFrame) -> pl.DataFrame:
+    import polarscope as ps
+
+    return ps.xray(df, include="all", corr_target="target", great_tables=False)
+
+
+def test_correlation_bar_has_fixed_width_track_and_linear_scale() -> None:
+    """Bars sit on a constant-width track spanning exactly -1..1.
+
+    fmt_nanoplot could not do this: it renders a scalar as a stub whose size
+    depends on the other values in the column, which made every correlation
+    look identical and unreadable.
+    """
+    n = 40
+    df = pl.DataFrame(
+        {
+            "target": [float(i) for i in range(n)],
+            "perfect": [float(i) for i in range(n)],
+            "half": [i * 0.5 + (i % 7) * 4.0 for i in range(n)],
+            "negative": [float(-i) for i in range(n)],
+        }
+    )
+    xr = _xray_frame(df)
+    cells = _corr_cells(df)
+
+    tracks = {c: _bar_px(cells[c])[0] for c in ("perfect", "half", "negative")}
+    assert len(set(tracks.values())) == 1, f"track width must be constant, got {tracks}"
+    track_w = next(iter(tracks.values()))
+
+    # A perfect correlation fills exactly half the track (centre -> edge).
+    assert _bar_px(cells["perfect"])[1] == pytest.approx(track_w / 2)
+
+    # Bar length is linear in |corr| against that same fixed half-track.
+    for col in ("perfect", "half", "negative"):
+        corr = xr.filter(pl.col("column") == col)["correlation"][0]
+        assert _bar_px(cells[col])[1] == pytest.approx(abs(corr) * track_w / 2, abs=1.0)
+
+    # Sign is encoded by colour.
+    assert _bar_px(cells["perfect"])[2] == "#4A90E2"
+    assert _bar_px(cells["negative"])[2] == "#E24A4A"
+
+
+def test_correlation_plot_renders_no_none_text_and_shares_the_spanner() -> None:
+    """The target's own row shows a dash, and one spanner covers both columns."""
+    import re
+
+    import polarscope as ps
+
+    df = pl.DataFrame(
+        {
+            "target": [0.0, 1.0, 0.0, 1.0, 0.0, 1.0],
+            "feat": [1.0, 2.0, 3.0, 1.5, 2.5, 3.5],
+        }
+    )
+    html = ps.xray(df, include="all", corr_target="target").as_raw_html()
+
+    # The literal string "None" must never be rendered into a cell.
+    assert not re.search(r"<td[^>]*>\s*None\s*</td>", html)
+
+    # The correlation spanner covers Correlation *and* Correlation_Plot.
+    spanner = re.search(
+        r'<th[^>]*colspan="(\d+)"[^>]*>\s*(?:<span[^>]*>)?\s*Correlation with', html
+    )
+    assert spanner is not None, "correlation spanner not found"
+    assert int(spanner.group(1)) == 2, f"spanner spans {spanner.group(1)} column(s), want 2"
+
+
+def test_correlation_bar_scale_is_independent_of_other_columns() -> None:
+    """The same correlation renders identically whatever its neighbours are.
+
+    The nanoplot autoscaled to the observed range, so a weak correlation drawn
+    beside a strong one came out exactly the same length.
+    """
+    weak = pl.DataFrame(
+        {
+            "target": [0.0, 1.0, 0.0, 1.0, 0.0, 1.0, 0.0, 1.0, 0.0, 1.0],
+            "feat": [1.0, 2.0, 3.0, 1.5, 2.5, 3.5, 1.2, 2.2, 3.2, 4.0],
+        }
+    )
+    strong = weak.with_columns((pl.col("target") * 10 + 0.1).alias("strongfeat"))
+
+    beside = _corr_cells(strong)
+    alone_px = _bar_px(_corr_cells(weak)["feat"])[1]
+    beside_px = _bar_px(beside["feat"])[1]
+    strong_px = _bar_px(beside["strongfeat"])[1]
+
+    assert alone_px == pytest.approx(beside_px)
+    assert beside_px < strong_px / 2
+
+
+def test_all_produced_column_names_are_lowercase() -> None:
+    """Every statistic xray() produces is named in lowercase.
+
+    The output used to mix Title_Case ('pct_missing'), ALLCAPS ('iqr') and
+    lowercase ('skew', 'std'), which reads as inconsistent.
+    """
+    from datetime import date
+
+    import polarscope as ps
+
+    df = pl.DataFrame(
+        {
+            "num": [1.0, 2.0, 3.0, 4.0, 5.0, 6.0],
+            "txt": ["a", "b", "a", "c", "b", "a"],
+            "flag": [True, False, True, True, False, True],
+            "when": [date(2020, 1, i + 1) for i in range(6)],
+            "target": [0, 1, 0, 1, 1, 0],
+        }
+    )
+    for expanded in (False, True):
+        for usability in (False, True):
+            out = ps.xray(
+                df, include="all", expanded=expanded, model_usability=usability,
+                corr_target="target", great_tables=False,
+            )
+            bad = [c for c in out.columns if c != c.lower()]
+            assert bad == [], f"expanded={expanded} usability={usability}: {bad}"
+
+
+def test_correlation_plot_column_keeps_its_own_name() -> None:
+    """The correlation bar column is labelled correlation_plot, not an axis legend."""
+    import re
+
+    import polarscope as ps
+
+    df = pl.DataFrame({"target": [0.0, 1.0, 0.0, 1.0], "feat": [1.0, 2.0, 3.0, 1.5]})
+    html = ps.xray(df, include="all", corr_target="target").as_raw_html()
+
+    header = re.search(r'id="correlation_plot"[^>]*>(.*?)</th>', html, re.S)
+    assert header is not None, "correlation_plot column header not found"
+    assert re.sub(r"<[^>]+>", "", header.group(1)).strip() == "correlation_plot"
+
+
+def test_expanded_mode_drops_unpopulated_string_and_temporal_stats() -> None:
+    """Expanded mode must not render stat columns that nothing populated.
+
+    String/temporal keys are seeded as None on every column so the summary
+    schema stays stable. A numeric-only frame populates none of them, which
+    left 11 columns of literal "None" in the expanded table.
+    """
+    import polarscope as ps
+
+    numeric = pl.DataFrame({"a": [1.0, 2.0, 3.0, 4.0], "b": [4.0, 3.0, 2.0, 1.0]})
+    out = ps.xray(numeric, expanded=True, great_tables=False)
+
+    empty = [c for c in out.columns if out[c].null_count() == out.height]
+    assert empty == [], f"all-null columns rendered: {empty}"
+    for col in ("top", "top_freq", "mode_share", "sample_vals", "earliest", "latest"):
+        assert col not in out.columns
+
+    # A frame that actually has string data keeps its string stats.
+    mixed = numeric.with_columns(pl.Series("txt", ["a", "b", "a", "c"]))
+    mixed_out = ps.xray(mixed, include="all", expanded=True, great_tables=False)
+    assert {"top", "top_freq", "mode_share"} <= set(mixed_out.columns)
+    # ...but still no temporal columns, since there is no temporal column.
+    assert "earliest" not in mixed_out.columns
+
+
+def test_number_formatting_drops_trailing_zeros() -> None:
+    """Whole numbers render bare, but genuine decimals keep their precision."""
+    import re
+
+    import polarscope as ps
+
+    df = pl.DataFrame({"whole": [1.0, 2.0, 3.0, 4.0, 5.0]})
+    for expanded in (False, True):
+        html = ps.xray(df, expanded=expanded).as_raw_html()
+        cells = {c.strip() for c in re.findall(r"<td[^>]*>([^<]*)</td>", html)}
+
+        # mean/median/min/max of 1..5 are whole - no padding zeros
+        assert "3.00" not in cells, f"expanded={expanded}"
+        assert "1.00" not in cells, f"expanded={expanded}"
+        assert {"1", "3", "5"} <= cells, f"expanded={expanded}: {sorted(cells)}"
+
+        # std is 1.5811..., which must still honour decimals=2
+        assert "1.58" in cells, f"expanded={expanded}"
 
 
 def test_xray_internal_helpers() -> None:
@@ -379,20 +640,20 @@ def test_xray_internal_helpers() -> None:
 
     nano_df = pl.DataFrame(
         {
-            "Distribution_Plot": [[1, 2, 3], [], [5], None],
-            "Correlation_Plot": [0.1, None, float("nan"), float("inf")],
+            "distribution_plot": [[1, 2, 3], [], [5], None],
+            "correlation_plot": [0.1, None, float("nan"), float("inf")],
         }
     )
     nano_df, has_hist = xray_mod._sanitize_nanoplot_column(
-        nano_df, "Distribution_Plot", list_payload=True
+        nano_df, "distribution_plot", list_payload=True
     )
     nano_df, has_corr = xray_mod._sanitize_nanoplot_column(
-        nano_df, "Correlation_Plot", list_payload=False
+        nano_df, "correlation_plot", list_payload=False
     )
     assert has_hist is True
     assert has_corr is True
-    assert nano_df["Distribution_Plot"].to_list()[1] is None
-    assert nano_df["Correlation_Plot"].to_list()[2] is None
+    assert nano_df["distribution_plot"].to_list()[1] is None
+    assert nano_df["correlation_plot"].to_list()[2] is None
 
 
 def test_plots_core_helpers_and_drop_missing() -> None:

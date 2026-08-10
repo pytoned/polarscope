@@ -1,7 +1,9 @@
 
 from __future__ import annotations
+
 import math
-from typing import Iterable, Sequence, List
+from typing import Iterable, List, Sequence
+
 import polars as pl
 import polars.selectors as cs
 
@@ -867,7 +869,7 @@ def corr_plot(
     # Clustering logic
     if clustered:
         try:
-            from scipy.cluster.hierarchy import linkage, leaves_list
+            from scipy.cluster.hierarchy import leaves_list, linkage
             from scipy.spatial.distance import squareform
             
             # Replace NaN with 0 in correlation matrix before computing distances

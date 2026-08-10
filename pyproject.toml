@@ -53,6 +53,13 @@ include = ["polarscope*"]
 [tool.setuptools.package-data]
 polarscope = ["data/*.parquet"]
 
+[tool.ruff.lint]
+# Pin the rule set explicitly. Ruff's implicit defaults widen between releases,
+# and CI installs ruff unpinned - 0.16 turning on isort/pyupgrade/flake8-bugbear
+# by default broke the release pipeline on code that had not changed.
+# E4/E7/E9/F are ruff's long-standing defaults; I keeps imports sorted.
+select = ["E4", "E7", "E9", "F", "I"]
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 filterwarnings = ["ignore::DeprecationWarning"]
