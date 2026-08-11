@@ -4,6 +4,7 @@ __pycache__/
 *.pyd
 *.so
 *.egg-info/
+*.graphify-out/
 dist/
 build/
 

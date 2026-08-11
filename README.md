@@ -173,8 +173,8 @@ MIT License - see [LICENSE](LICENSE) file for details.
 
 ## 🙏 Acknowledgments
 
-Inspired by [`klib`](https://github.com/akanz1/klib) and built with [`great_tables`](https://github.com/posit-dev/great-tables).
+Inspired by [`klib`](https://github.com/akanz1/klib) and built with [`Polars`](https://github.com/pola-rs/polars) and [`great_tables`](https://github.com/posit-dev/great-tables).
 
 ---
 
-**🔬 A simple tool for basic Polars data inspection.**
+**🔬 A quick and lightweight tool for Polars dataframe stats and visualization.**

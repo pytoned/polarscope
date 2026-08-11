@@ -290,8 +290,9 @@ def test_normality_ks_fallback_for_large_samples() -> None:
         pytest.skip("scipy not available")
     data = np.random.default_rng(0).normal(size=6000)
     result = xray_mod._test_normality(data, "shapiro")
-    assert "sample too large" not in result
-    assert "Kolmogorov-Smirnov" in result
+    # Truly normal data must pass even via the large-sample KS fallback,
+    # and the cell text is the compact "VERDICT (p=...)" format.
+    assert result.startswith("NORMAL (p")
 
 
 def test_anderson_normality_avoids_scipy_future_warning() -> None:
@@ -302,7 +303,66 @@ def test_anderson_normality_avoids_scipy_future_warning() -> None:
         warnings.simplefilter("error", FutureWarning)
         result = xray_mod._test_normality([1.0, 2.0, 3.0, 4.0, 5.0], "anderson")
 
-    assert "Anderson-Darling" in result
+    assert result.startswith(("NORMAL", "NON-NORMAL"))
+
+
+def test_statistical_test_cells_are_compact() -> None:
+    if not xray_mod._check_scipy_availability():
+        pytest.skip("scipy not available")
+    rng = np.random.default_rng(0)
+
+    # Tiny p-values render as "p<0.001" instead of a misleading "p=0.000".
+    skewed = rng.exponential(1.0, size=2000)
+    assert xray_mod._test_normality(skewed, "shapiro") == "NON-NORMAL (p<0.001)"
+    assert xray_mod._test_uniformity(skewed, "ks") == "NON-UNIFORM (p<0.001)"
+
+    # Truly uniform data passes the uniformity test at realistic sample sizes.
+    uniform = rng.uniform(0.0, 1.0, size=2000)
+    result = xray_mod._test_uniformity(uniform, "ks")
+    assert result.startswith("UNIFORM (p")
+
+
+def test_expanded_column_group_order() -> None:
+    import polarscope as ps
+
+    rng = np.random.default_rng(0)
+    df = pl.DataFrame({
+        "a": rng.exponential(1.0, 200),
+        "b": rng.normal(0.0, 1.0, 200),
+    })
+
+    cols = ps.xray(df, expanded=True, great_tables=False, corr_target="b").columns
+    # Plot payloads are Great Tables-only; plain output must not carry them.
+    assert "distribution_plot" not in cols
+    assert "correlation_plot" not in cols
+    # Basic statistics lead, with opt_dtype right after dtype.
+    assert cols[:8] == ["column", "dtype", "opt_dtype", "count", "mean", "std", "min", "max"]
+    # Group order: quantiles, counts, outliers, distribution, correlation,
+    # tests, quality assessment.
+    assert cols[-4:] == ["normality_test", "uniformity_test", "shakiness_score", "quality_flag"]
+    assert (
+        cols.index("25%")
+        < cols.index("null_count")
+        < cols.index("n_outliers")
+        < cols.index("mad")
+        < cols.index("correlation")
+        < cols.index("normality_test")
+    )
+
+
+def test_compact_count_honors_decimals() -> None:
+    """Compact integer columns keep decimal precision (12,345 -> 12.35K)."""
+    import polarscope as ps
+
+    df = pl.DataFrame({"x": [float(i) for i in range(12345)]})
+    html = ps.xray(df, compact=True, decimals=2).as_raw_html()
+    assert "12.35K" in html
+
+
+def test_execution_time_formatting() -> None:
+    assert xray_mod._format_execution_time(870) == "870 ms"
+    assert xray_mod._format_execution_time(12219) == "12.2 s"
+    assert xray_mod._format_execution_time(93000) == "1.6 min"
 
 
 def test_string_stats_and_numeric_column_hiding() -> None:
@@ -629,6 +689,11 @@ def test_xray_internal_helpers() -> None:
 
     assert xray_mod._suggest_optimal_dtype(pl.Series([1.0, 2.0, float("nan")]), pl.Float64) == "Int64"
     assert xray_mod._suggest_optimal_dtype(pl.Series([1.1, 2.2]), pl.Float64) == "Float32"
+    # Float64 -> Float32 is suggested only when lossless (round-trip error
+    # <= 1e-6), mirroring the shrink policy fix()/convert_datatypes applies.
+    assert xray_mod._suggest_optimal_dtype(
+        pl.Series([307491.47, 12345.678]), pl.Float64
+    ) == "Float64"
     assert xray_mod._suggest_optimal_dtype(pl.Series([float("nan"), float("nan")]), pl.Float64) == "Float64"
     assert xray_mod._suggest_optimal_dtype(pl.Series(["x", "x", "x", "x", "y"]), pl.String) == "Categorical"
 

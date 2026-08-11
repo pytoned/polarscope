@@ -247,12 +247,15 @@ class TestXrayFunction:
         result = ps.xray(df, compact=True, sep_mark=" ", dec_mark=",")
         assert result is not None
 
-    def test_xray_decimal_precision_is_applied_only_when_rendering(self):
+    def test_xray_decimals_applies_to_both_output_modes(self):
         df = pl.DataFrame({"value": [1.123456, 2.123456]})
 
+        # Plain output floats are rounded to the decimals option (default 2)...
         raw = ps.xray(df, great_tables=False)
-        assert raw["mean"][0] == pytest.approx(1.623456)
-        assert raw["mean"][0] != 1.623
+        assert raw["mean"][0] == 1.62
+        # ...and honor a custom precision.
+        raw5 = ps.xray(df, great_tables=False, decimals=5)
+        assert raw5["mean"][0] == pytest.approx(1.62346)
 
         rendered = ps.xray(df, decimals=5).as_raw_html()
         assert "1.62346" in rendered
