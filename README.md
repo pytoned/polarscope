@@ -1,11 +1,14 @@
 ![Polarscope — x-ray your Polars DataFrames: summary stats, distribution nanoplots, outliers and correlations in one table](docs/img/polarscope-cover.svg)
 
-# 🔬 Polarscope
+# 🔬 Polarscope - describe() on steroids
 
 **One call, one table: a full profile of any Polars DataFrame. No pandas, anywhere, ever.**
 
 ```python
+import polars as pl
 import polarscope as ps
+
+df = pl.read_csv('your-data.csv')
 ps.xray(df)
 ```
 
@@ -16,6 +19,7 @@ ps.xray(df)
 [![PyPI](https://img.shields.io/pypi/v/polarscope.svg)](https://pypi.org/project/polarscope/)
 [![PyPI - Python Version](https://img.shields.io/pypi/pyversions/polarscope.svg)](https://pypi.org/project/polarscope/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+[![PyPI Downloads](https://static.pepy.tech/personalized-badge/polarscope?period=total&units=INTERNATIONAL_SYSTEM&left_color=BLACK&right_color=GREEN&left_text=downloads)](https://pepy.tech/projects/polarscope)
 
 **Simple data inspection tools for Polars** 🐻‍❄️
 
@@ -25,21 +29,20 @@ Polarscope is a basic data analysis library for Polars DataFrames. It provides a
 
 ## ✨ Current Features
 
-### 🔬 Data Inspection (`xray`)
+### 🔬 Dataframe Summary Statistics (`xray`)
 - Summary statistics for numeric columns by default; `include='all'` covers every dtype.
-- Rich string statistics for String/Categorical/Enum columns: top value and frequency, min/median/avg/max length, mode share, top-3 values, and value samples.
+- Statistics for String/Categorical/Enum columns: top value and frequency, min/median/avg/max length, mode share, top-3 values, and value samples.
 - Boolean columns analyzed as 0/1 (Mean = share of True); temporal columns report earliest/latest timestamps.
-- Optional expanded output (`expanded=True`) with normality/uniformity tests, outlier metrics, usability flags, and correlation details.
-- Inline distribution nanoplots and per-column data-quality flags.
-- Great Tables output (`great_tables=True`) or plain Polars DataFrame output (`great_tables=False`).
+- Distribution nanoplot per column.
+- Optional title for summary table (`title=Your Title`).
+- Optional correlation (`corr_target=column_name`) against target for every column with nanoplot visualization.
+- Optional expanded output (`expanded=True`) with normality/uniformity tests, outlier metrics and modelling usability flags.
+- Optional compact mode (`compact=True`) that shortens big numbers to K (thousands) and M (millions) and decimal precision (`decimals=int`)
+- Great Tables output by default or plain Polars DataFrame output (`great_tables=False`).
 
 With `include="all"`, string and categorical columns get their own statistics alongside the numeric ones:
 
-![xray() on a mixed-dtype DataFrame showing string statistics](docs/img/xray-mixed-dtypes.png)
-
-### 📊 Built-in Datasets
-- Three datasets ship with the package: `ps.titanic()`, `ps.diabetes()`, and `ps.cardio()` (70k-row health records).
-- Also available via `from polarscope.datasets import titanic, diabetes, cardio`, with loader helpers and dataset metadata.
+![xray() on a DataFrame with correlation to target column enabled](docs/img/xray_corr.png)
 
 ### 🧹 Cleaning & Optimization (`fix`)
 - `ps.fix(df)` cleans and optimizes in one call: column renaming (`case="snake"/"camel"/"pascal"/"kebab"/"upper"/"lower"`), whitespace stripping (empty strings → null), dtype shrinking, and empty-column removal — with a compact report of what changed.
@@ -50,28 +53,32 @@ With `include="all"`, string and categorical columns get their own statistics al
 ### 📈 Plots
 - Correlation/missing/distribution/categorical plots (plotly or altair backends)
 
+### 📊 Built-in Datasets
+- Three datasets ship with the package: `ps.titanic()`, `ps.diabetes()`, and `ps.cardio()`.
+- Also available via `from polarscope.datasets import titanic, diabetes, cardio`, with loader functions.
+
 ### ✅ Polars-Only Data Handling
 - Data handling is implemented with Polars.
-- No Pandas is required for core data processing.
+- No Pandas, anywhere, ever. 
 
 ---
 
 ## 🔍 How Polarscope compares
 
-| | **polarscope** 1.9.4 | skimpy 0.0.21 | ydata-profiling 4.18.4 | klib 1.4.1 |
+| | **polarscope** 1.9.5 | skimpy 0.0.21 | ydata-profiling 4.18.4 | klib 1.4.1 |
 |---|---|---|---|---|
 | Takes a Polars DataFrame directly | ✅ | ✅ | ❌ convert to pandas first | ❌ convert to pandas first |
-| Requires pandas | **❌ never** | ✅ hard dependency | ✅ | ✅ |
+| Requires/converts to pandas | **✅ never** | ❌ hard dependency | ❌ | ❌ |
 | Core dependencies | **3** | 12 | 21 | 8 |
 | Minimum Python | **3.9** | 3.11 | 3.10 | 3.10 |
-| Primary output | Great Tables HTML, or a Polars DataFrame | terminal (rich) | standalone HTML report | matplotlib/seaborn figures |
+| Primary output | Great Tables HTML, or Polars DataFrame | terminal (rich) | standalone HTML report | matplotlib/seaborn figures |
 | String / categorical stats | ✅ | ✅ | ✅ | partial |
-| One-call cleaning | ✅ `ps.fix()` | ❌ | ❌ | ✅ `klib.clean()` |
+| One-call cleaning and dtype optimization | ✅ `ps.fix()` | ❌ | ❌ | ✅ |
 
 **Where the others are the better choice:**
 
-- **ydata-profiling** produces a far deeper report — variable interactions, correlation matrices, alerts and warnings. If you want an exhaustive standalone HTML artifact and don't mind the 21 dependencies or the pandas conversion, it does more than polarscope does.
-- **skimpy** also reads Polars natively and prints straight to the terminal, which is the nicer fit for CLI and script workflows. Polarscope targets the notebook.
+- **ydata-profiling** produces a far deeper report in one call — variable interactions, correlation matrices, alerts and warnings. If you want an exhaustive standalone HTML artifact and don't mind the 21 dependencies or the pandas conversion, it does more than polarscope does.
+- **skimpy** also reads Polars natively and prints straight to the terminal, which is the nicer fit for CLI and script workflows. Polarscope targets notebooks with presentation ready outputs.
 - **klib** has a mature pandas cleaning and plotting suite. Polarscope's plotting API is openly modelled on it.
 
 **Where polarscope wins:** it is the only one of the four with **no pandas anywhere in its dependency tree**, and the only one installable on Python 3.9 — which matters if your environment is locked down and you cannot pull in pandas, seaborn and numba just to look at a table.
@@ -144,24 +151,9 @@ ps.xray(
 
 ---
 
-## 🩺 Troubleshooting
-
-### Notebook still uses old code
-If you changed source code locally but notebooks still show old behavior, reinstall in the same interpreter and restart kernel:
-
-```python
-import sys, subprocess
-subprocess.check_call([sys.executable, "-m", "pip", "install", "-e", "/path/to/polarscope"])
-```
-
-### `ValueError: Only the x-axis of a nanoplot allows strings`
-This comes from Great Tables nanoplot rendering when unsupported payloads reach the renderer. Update to latest local source and restart kernel.
-
----
-
 ## 🤝 Contributing
 
-This is a small project, but contributions are welcome! Feel free to report bugs or suggest improvements.
+Contributions are welcome! Feel free to report bugs or suggest improvements.
 
 ---
 
@@ -177,4 +169,4 @@ Inspired by [`klib`](https://github.com/akanz1/klib) and built with [`Polars`](h
 
 ---
 
-**🔬 A quick and lightweight tool for Polars dataframe stats and visualization.**
+**🔬 A quick and lightweight tool for Polars dataframe stats and visualizations.**
