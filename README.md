@@ -40,7 +40,7 @@ Polarscope is a basic data analysis library for Polars DataFrames. It provides a
 - Optional compact mode (`compact=True`) that shortens big numbers to K (thousands) and M (millions) and decimal precision (`decimals=int`)
 - Great Tables output by default or plain Polars DataFrame output (`great_tables=False`).
 
-With `include="all"`, string and categorical columns get their own statistics alongside the numeric ones:
+Quickly compute the correlation (Spearman or Pearson) to a target column:
 
 ![xray() on a DataFrame with correlation to target column enabled](docs/img/xray_corr.png)
 
