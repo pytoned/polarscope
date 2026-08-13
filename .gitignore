@@ -21,3 +21,4 @@ htmlcov/
 # Generated benchmark output
 performance_results.json
 demo/performance_results.json
+graphify-out/
