@@ -63,9 +63,118 @@ Quickly compute the correlation (Spearman or Pearson) to a target column:
 
 ---
 
+### 🔗 Customizing the Polarscope output
+
+Polarscope is build on top of amazing libraries like Great Tables, Plotly and Altair. Polarscope functions like ps.xray() return native objects from these libraries 
+(such as a GT table, a Plotly Figure, or an Altair Chart), so you retain complete access to their underlying APIs. This allows you to seamlessly chain native methods to further customize styling, annotations, 
+and layout configurations directly on the Polarscope output. Below are three examples demonstrating how to extend these objects.
+
+Great Tables customization:
+
+```python
+from great_tables import md, loc, style   # imported to enable extra functionality
+
+(
+    ps.xray(df[:, :6])
+    .tab_header(
+        title = "Example: GT method chaining onto ps.xray() with custom table styling, a source note and a footnote in markdown.",
+        subtitle = ""
+    )
+    .tab_footnote(footnote=md("Some ***very*** insightful footnote about the data."))
+    .tab_source_note("Source: data gathered from the Polarscope Times")
+    .tab_style(
+        style=style.text(color="purple", weight="bold"),
+        locations=loc.footer()
+    )
+    .tab_options(
+        table_width='60%',
+        table_background_color="#F1E1FC",
+        heading_background_color="#F1E1FC",
+        column_labels_background_color="#F1E1FC",
+        table_font_names="DejaVu Sans",
+        column_labels_font_weight="bold"
+    )
+)
+```
+
+Customizing a GT table using method chaining:
+
+![Customizing a GT table using method chaining](docs/img/gt_styling.png)
+
+
+Plotly customization:
+
+```python
+(
+    # base plot using Plotly backend
+    ps.cat_plot(df.select(pl.col('sex', 'embarked')))
+    
+    # Customize the Plotly go object
+    .update_traces(
+        cliponaxis=False,
+        marker_color="#25023b"  # Changes the fill color of the bars
+    )
+    .update_layout(
+        template="plotly_white", 
+        title="Example of Plotly customization",
+        margin={"t": 100, "b": 100},
+        plot_bgcolor="#F1E1FC",
+        paper_bgcolor="#F1E1FC",
+    )
+)
+```
+
+Customizing a Plotly go object using method chaining:
+
+![Customizing a Plotly chart](docs/img/plotly_styling.png)
+
+
+Altair customization:
+
+```python
+import altair as alt
+
+# base correlation plot using Polarscope corr_plot() with Altair backend
+base_chart = ps.corr_plot(df[:, :9], width=600, height=300, backend="altair")
+
+# Fetch the correlation values directly from the base chart
+text_labels = base_chart.mark_text(baseline='middle').encode(
+    text=alt.Text('correlation:Q', format='.0%'),
+    
+    # Dynamically change text color based on the correlation value and use white text if cell background is dark
+    color=alt.condition(
+        abs(alt.datum.correlation) > 0.7,
+        alt.value('white'),
+        alt.value('black')
+    )
+)
+
+# Layer the charts (+) and chain final configurations onto the result
+final_chart = (
+    (base_chart + text_labels)
+    .properties(
+        title="Example of Altair backend chart customization",
+        padding={"left": 40, "right": 40, "top": 20, "bottom": 20}
+    )
+    .configure_title(
+        font="DejaVu Sans",
+        color="darkblue",
+        anchor="start",
+        fontSize=20,
+    )
+)
+final_chart.show()
+```
+
+Customizing an Altair chart object using method chaining:
+
+![Customizing an Altair chart object using method chaining](docs/img/altair_styling.png)
+
+---
+
 ## 🔍 How Polarscope compares
 
-| | **polarscope** 1.9.5 | skimpy 0.0.21 | ydata-profiling 4.18.4 | klib 1.4.1 |
+| | **polarscope** 1.9.6 | skimpy 0.0.21 | ydata-profiling 4.18.4 | klib 1.4.1 |
 |---|---|---|---|---|
 | Takes a Polars DataFrame directly | ✅ | ✅ | ❌ convert to pandas first | ❌ convert to pandas first |
 | Requires/converts to pandas | **✅ never** | ❌ hard dependency | ❌ | ❌ |
@@ -147,6 +256,42 @@ ps.xray(
     decimals=2,
     great_tables=False            # return Polars DataFrame
 )
+```
+
+### Customizing Beyond the Built-in Options
+
+polarscope returns the underlying library's own object rather than a wrapper, so
+anything `great_tables` or your plotting backend can do is available by chaining
+onto the result — no polarscope parameter needed.
+
+`ps.xray()` returns a `GT` object. Chained calls run after polarscope's own
+styling, so they win where the two overlap:
+
+```python
+from great_tables import loc, md
+
+(
+    ps.xray(df)
+    .tab_options(table_background_color="#fdf6e3")
+    .tab_footnote(
+        footnote=md("Excludes nulls."),
+        locations=loc.body(columns="mean", rows=[0]),
+    )
+)
+```
+
+Column names are not relabelled, so the names from `great_tables=False` output
+are the identifiers to use in chained calls.
+
+The plotting functions return a Plotly `Figure` or Altair `Chart`:
+
+```python
+# Per figure
+ps.missingval_plot(df).update_layout(template="plotly_dark")
+
+# Or globally, using the backend's own theme setting
+import plotly.io as pio
+pio.templates.default = "plotly_dark"
 ```
 
 ---

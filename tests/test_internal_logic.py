@@ -127,9 +127,13 @@ def test_xray_quasi_constant_and_distribution_validation() -> None:
     out = ps.xray(df_const, include="all", expanded=True, great_tables=False)
     assert out["quality_flag"][0] == "⚠ SHAKY"
 
-    # distribution_plot only supports "histogram".
-    with pytest.raises(ValueError):
+    # The histogram is the only distribution plot, so there is no knob to turn.
+    with pytest.raises(TypeError):
         ps.xray(df_const, distribution_plot="kde")
+
+    # The rendered histogram column itself is unaffected by removing the argument.
+    html = ps.xray(df_const, include="all", expanded=True).as_raw_html()
+    assert "distribution_plot" in html
 
 
 def test_xray_model_usability_with_non_numeric_columns() -> None:
@@ -447,6 +451,73 @@ def test_correlation_columns_omitted_when_nothing_can_correlate() -> None:
     real = ps.xray(df, include="all", corr_target="target", great_tables=False)
     assert "correlation" in real.columns
     assert real.filter(pl.col("column") == "num")["correlation"][0] is not None
+
+
+def test_corr_target_must_exist_and_be_numeric() -> None:
+    import polarscope as ps
+
+    df = pl.DataFrame({"num": [1.0, 2.0, 3.0], "txt": ["a", "b", "c"]})
+
+    with pytest.raises(ValueError, match="not found in DataFrame"):
+        ps.xray(df, include="all", corr_target="missing", great_tables=False)
+
+    with pytest.raises(ValueError, match="must be numeric"):
+        ps.xray(df, include="all", corr_target="txt", great_tables=False)
+
+
+def test_corr_method_requires_corr_target() -> None:
+    """corr_method has nothing to act on without a target, so it must be rejected."""
+    import polarscope as ps
+
+    df = pl.DataFrame({"a": [1.0, 2.0, 3.0, 4.0], "b": [2.0, 4.0, 5.0, 9.0]})
+
+    with pytest.raises(ValueError, match="without a valid corr_target"):
+        ps.xray(df, corr_method="pearson", great_tables=False)
+
+    # The pairing is checked before the value is, so an unsupported method
+    # without a target still reports the missing target.
+    with pytest.raises(ValueError, match="without a valid corr_target"):
+        ps.xray(df, corr_method="kendall", great_tables=False)
+
+    # Omitting both remains the happy path.
+    assert "correlation" not in ps.xray(df, great_tables=False).columns
+
+
+def test_corr_method_validated_against_a_real_target() -> None:
+    import polarscope as ps
+
+    df = pl.DataFrame({"a": [1.0, 2.0, 3.0, 4.0], "target": [2.0, 4.0, 5.0, 9.0]})
+
+    for method in ("pearson", "spearman"):
+        out = ps.xray(
+            df, corr_target="target", corr_method=method, great_tables=False
+        )
+        assert out.filter(pl.col("column") == "a")["correlation"][0] is not None
+
+    with pytest.raises(ValueError, match="corr_method must be"):
+        ps.xray(df, corr_target="target", corr_method="kendall", great_tables=False)
+
+
+def test_corr_method_defaults_to_pearson_and_spearman_differs() -> None:
+    """The method must reach pl.corr, not merely survive validation."""
+    import polarscope as ps
+
+    # Monotonic but strongly non-linear: Spearman is exactly 1, Pearson is not.
+    df = pl.DataFrame(
+        {"a": [1.0, 2.0, 3.0, 4.0, 5.0], "target": [1.0, 2.0, 3.0, 4.0, 100.0]}
+    )
+
+    def corr_of(**kwargs: str) -> float:
+        out = ps.xray(df, corr_target="target", great_tables=False, **kwargs)
+        return out.filter(pl.col("column") == "a")["correlation"][0]
+
+    implicit = corr_of()
+    pearson = corr_of(corr_method="pearson")
+    spearman = corr_of(corr_method="spearman")
+
+    assert implicit == pytest.approx(pearson)
+    assert spearman == pytest.approx(1.0)
+    assert pearson < 0.9
 
 
 def _corr_cells(frame: pl.DataFrame) -> dict[str, str]:

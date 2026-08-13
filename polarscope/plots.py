@@ -1,3 +1,25 @@
+"""Plotting helpers built on the Plotly and Altair backends.
+
+Every plotting function returns the backend's own figure object rather than a
+polarscope wrapper, so the full backend API stays available without polarscope
+re-exposing it. Options that are not explicit parameters here are reached in one
+of two ways.
+
+Per figure, by chaining onto the result::
+
+    ps.missingval_plot(df).update_layout(template="plotly_dark")
+
+Globally, using the backend's own theme setting::
+
+    import plotly.io as pio
+    pio.templates.default = "plotly_dark"    # or alt.themes.enable(...)
+
+Both are honoured because these functions only ever set the properties they
+manage (title, axis titles, width, height) and leave the rest to the backend.
+A Plotly template styles only properties the figure has not set explicitly, so
+the correlation heatmaps keep their built-in ``colorscale``; override that with
+``update_traces(colorscale=...)`` if needed.
+"""
 
 from __future__ import annotations
 
@@ -498,6 +520,8 @@ def corr_heatmap(
     -------
     Figure object
         Correlation heatmap visualization (plotly Figure or altair Chart).
+        Chain backend methods onto it to customize further - see the module
+        docstring.
     """
     # Validate parameters
     if method not in ["pearson", "spearman"]:
@@ -629,6 +653,8 @@ def dist_plot(
     -------
     Figure object
         The distribution plot figure (plotly Figure or altair Chart).
+        Chain backend methods onto it to customize further - see the module
+        docstring.
     """
     _validate_backend(backend)
 
@@ -684,6 +710,9 @@ def missingval_plot(
     -------
     Figure object
         The missing values plot figure (plotly Figure or altair Chart).
+        Chain backend methods onto it to customize further, e.g.
+        ``ps.missingval_plot(df).update_layout(template="plotly_dark")`` -
+        see the module docstring.
     """
     cols = list(df.columns)
     if sort not in {"desc", "asc", "none"}:
@@ -755,6 +784,8 @@ def cat_plot(
     -------
     Figure object
         The categorical plot figure (plotly Figure or altair Chart).
+        Chain backend methods onto it to customize further - see the module
+        docstring.
     """
     if top < 0 or bottom < 0:
         raise ValueError("top and bottom must be non-negative")
@@ -849,6 +880,8 @@ def corr_plot(
     -------
     Figure object
         Enhanced correlation plot (plotly Figure or altair Chart).
+        Chain backend methods onto it to customize further - see the module
+        docstring.
     """
     _validate_backend(backend)
 

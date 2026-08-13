@@ -137,7 +137,7 @@ def xray(
     outlier_method: str = "iqr",
     outlier_bounds: list[float] | None = None,
     corr_target: str | None = None,
-    corr_method: str = "pearson",
+    corr_method: str | None = None,
     normality_test: str = "shapiro",
     uniformity_test: str = "ks",
     missing_threshold: float = 0.3,
@@ -147,7 +147,6 @@ def xray(
     outlier_threshold: float = 0.05,
     shakiness_threshold: int = 2,
     model_usability: bool = False,
-    distribution_plot: str = "histogram",
     decimals: int = 2,
     sep_mark: str = ",",
     dec_mark: str = ".",
@@ -215,8 +214,10 @@ def xray(
         Target column for correlation analysis. Must be a numeric column.
         Shows correlation between each numeric column and the target.
         The accompanying bars use a fixed -1 to 1 scale.
-    corr_method : str, default "pearson"
-        Correlation method passed to pl.corr(). Only used with corr_target.
+    corr_method : str | None, optional
+        Correlation method passed to pl.corr(). Requires corr_target;
+        passing it without a target raises ValueError. When omitted,
+        "pearson" is used.
         - "pearson" (default): Linear correlation; sensitive to outliers and
           assumes a roughly linear relationship.
         - "spearman": Rank correlation; captures monotonic (not necessarily
@@ -268,9 +269,6 @@ def xray(
         Include sophisticated model usability scoring with weighted flags and recommendations.
         Adds columns: usability_flags, usability_score, recommendation
         (in both minimal and expanded mode).
-    distribution_plot : str, default "histogram"
-        Type of distribution visualization for numeric columns:
-        - "histogram": Bar-based histogram (default) without markers
     decimals : int, default 2
         Number of decimal places for numeric formatting. In Great Tables
         output this is display-only formatting; with great_tables=False the
@@ -290,6 +288,10 @@ def xray(
     Union[GT, pl.DataFrame]
         Either a Great Tables object (if great_tables=True) or a Polars DataFrame
         (if great_tables=False) containing the comprehensive summary statistics.
+        The Great Tables object is a plain GT, so any Great Tables method can be
+        chained onto it to restyle the result - see Examples. xray() does not
+        relabel columns, so the names in the great_tables=False output are the
+        identifiers to use in chained calls.
 
     Examples
     --------
@@ -354,6 +356,20 @@ def xray(
     ...     sep_mark=" ",          # Space as thousands separator
     ...     dec_mark=",",          # Comma as decimal separator
     ...     pattern="({x})"        # Wrap values in parentheses
+    ... )
+
+    Anything Great Tables can do that xray() does not expose is available by
+    chaining onto the returned object. Chained calls run after xray()'s own
+    styling, so they win where the two overlap:
+
+    >>> from great_tables import loc, md
+    >>> styled = (
+    ...     ps.xray(df)
+    ...     .tab_options(table_background_color="#fdf6e3")
+    ...     .tab_footnote(
+    ...         footnote=md("Excludes nulls."),
+    ...         locations=loc.body(columns="mean", rows=[0]),
+    ...     )
     ... )
 
     Notes
@@ -440,9 +456,6 @@ def xray(
     if uniformity_test not in ["ks", "chi2"]:
         raise ValueError("uniformity_test must be 'ks' or 'chi2'")
 
-    if distribution_plot not in ["histogram"]:
-        raise ValueError("distribution_plot must be 'histogram'")
-
     if isinstance(decimals, bool) or not isinstance(decimals, int) or decimals < 0:
         raise ValueError("decimals must be a non-negative integer")
 
@@ -455,6 +468,14 @@ def xray(
             raise ValueError(
                 f"Target column '{corr_target}' must be numeric, got {target_dtype}"
             )
+    elif corr_method is not None:
+        raise ValueError(
+            "Using corr_method without a valid corr_target column being set is "
+            "not allowed. Pass corr_target to choose the column to correlate against."
+        )
+
+    # None only exists to distinguish "not supplied" from an explicit choice above.
+    corr_method = corr_method if corr_method is not None else "pearson"
 
     if corr_method not in ["pearson", "spearman"]:
         raise ValueError("corr_method must be 'pearson' or 'spearman'")
@@ -615,16 +636,15 @@ def xray(
             if n_valid > 0:
                 distribution_data = []
                 try:
-                    if distribution_plot == "histogram":
-                        # Calculate optimal number of bins (max 12 for nanoplots)
-                        n_bins = min(12, max(5, math.isqrt(n_valid)))
+                    # Calculate optimal number of bins (max 12 for nanoplots)
+                    n_bins = min(12, max(5, math.isqrt(n_valid)))
 
-                        if min_val == max_val:
-                            # All values are the same
-                            distribution_data = [n_valid]
-                        else:
-                            histogram = series_clean.hist(bin_count=n_bins)
-                            distribution_data = histogram.get_column("count").to_list()
+                    if min_val == max_val:
+                        # All values are the same
+                        distribution_data = [n_valid]
+                    else:
+                        histogram = series_clean.hist(bin_count=n_bins)
+                        distribution_data = histogram.get_column("count").to_list()
 
                     col_stats["distribution_plot"] = distribution_data
                 except Exception:
@@ -975,7 +995,6 @@ def xray(
             pattern,
             title,
             model_usability,
-            distribution_plot,
         )
     else:
         # Calculate timing
@@ -996,7 +1015,6 @@ def xray(
             pattern,
             title,
             model_usability,
-            distribution_plot,
         )
 
 
@@ -1782,26 +1800,25 @@ def _format_nanoplot_value(value: float) -> str:
     return format(value, ".3g")
 
 
-def _apply_nanoplots(gt_table: GT, has_hist_data: bool, distribution_plot: str) -> GT:
+def _apply_nanoplots(gt_table: GT, has_hist_data: bool) -> GT:
     """Apply histogram nanoplot formatting shared by both table modes."""
     # Histogram nanoplots for the distribution_plot column
     if has_hist_data:
         try:
             from great_tables import nanoplot_options
 
-            if distribution_plot == "histogram":
-                gt_table = gt_table.fmt_nanoplot(
-                    columns="distribution_plot",
-                    plot_type="bar",
-                    options=nanoplot_options(
-                        data_bar_stroke_width=0,  # No gaps between bars (like histogram)
-                        data_bar_fill_color="#4A90E2",
-                        show_data_line=False,
-                        show_data_area=False,
-                        y_val_fmt_fn=_format_nanoplot_value,
-                        y_axis_fmt_fn=_format_nanoplot_value,
-                    ),
-                )
+            gt_table = gt_table.fmt_nanoplot(
+                columns="distribution_plot",
+                plot_type="bar",
+                options=nanoplot_options(
+                    data_bar_stroke_width=0,  # No gaps between bars (like histogram)
+                    data_bar_fill_color="#4A90E2",
+                    show_data_line=False,
+                    show_data_area=False,
+                    y_val_fmt_fn=_format_nanoplot_value,
+                    y_axis_fmt_fn=_format_nanoplot_value,
+                ),
+            )
         except ImportError:
             # If nanoplot_options not available, use basic nanoplot
             gt_table = gt_table.fmt_nanoplot(
@@ -1828,7 +1845,6 @@ def _build_minimal_gt_table(
     pattern: str | None,
     title: str | None,
     model_usability: bool = False,
-    distribution_plot: str = "histogram",
 ) -> GT:
     """Build minimal Great Tables object."""
     summary_df, has_hist_data = _sanitize_nanoplot_column(
@@ -1952,7 +1968,7 @@ def _build_minimal_gt_table(
     gt_table = _apply_correlation_columns(
         gt_table, corr_target, summary_df, has_corr_data
     )
-    gt_table = _apply_nanoplots(gt_table, has_hist_data, distribution_plot)
+    gt_table = _apply_nanoplots(gt_table, has_hist_data)
 
     return gt_table
 
@@ -1972,7 +1988,6 @@ def _build_expanded_gt_table(
     pattern: str | None,
     title: str | None,
     model_usability: bool = False,
-    distribution_plot: str = "histogram",
 ) -> GT:
     """Build expanded Great Tables object with all statistics."""
     summary_df, has_hist_data = _sanitize_nanoplot_column(
@@ -2112,6 +2127,6 @@ def _build_expanded_gt_table(
     gt_table = _apply_correlation_columns(
         gt_table, corr_target, summary_df, has_corr_data
     )
-    gt_table = _apply_nanoplots(gt_table, has_hist_data, distribution_plot)
+    gt_table = _apply_nanoplots(gt_table, has_hist_data)
 
     return gt_table
