@@ -10,7 +10,7 @@ if [ -n "$(git status --porcelain)" ]; then
   exit 1
 fi
 
-uv run pytest -q                      # stop here if anything is broken
+uv run --frozen pytest -q                      # stop here if anything is broken
 
 ./bump.sh "${1:-patch}"               # edits files, commits, tags
 TAG=$(git describe --tags --abbrev=0)  # read back the tag just made
