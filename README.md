@@ -34,7 +34,7 @@ Polarscope is a basic data analysis library for Polars DataFrames. It provides a
 - Statistics for String/Categorical/Enum columns: top value and frequency, min/median/avg/max length, mode share, top-3 values, and value samples.
 - Boolean columns analyzed as 0/1 (Mean = share of True); temporal columns report earliest/latest timestamps.
 - Distribution nanoplot per column.
-- Optional title for summary table (`title=Your Title`).
+- Optional title, footnote, source note, and Great Tables theme (`title=…`, `footnote=…`, `source_note=…`, `theme="gray"`).
 - Optional correlation (`corr_target=column_name`) against target for every column with nanoplot visualization.
 - Optional expanded output (`expanded=True`) with normality/uniformity tests, outlier metrics and modelling usability flags.
 - Optional compact mode (`compact=True`) that shortens big numbers to K (thousands) and M (millions) and decimal precision (`decimals=int`)
