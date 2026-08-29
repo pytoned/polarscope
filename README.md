@@ -34,7 +34,7 @@ Polarscope is a basic data analysis library for Polars DataFrames. It provides a
 - Statistics for String/Categorical/Enum columns: top value and frequency, min/median/avg/max length, mode share, top-3 values, and value samples.
 - Boolean columns analyzed as 0/1 (Mean = share of True); temporal columns report earliest/latest timestamps.
 - Distribution nanoplot per column.
-- Optional title for summary table (`title=Your Title`).
+- Optional title, footnote, source note, and Great Tables theme (`title=…`, `footnote=…`, `source_note=…`, `theme="gray"`).
 - Optional correlation (`corr_target=column_name`) against target for every column with nanoplot visualization.
 - Optional expanded output (`expanded=True`) with normality/uniformity tests, outlier metrics and modelling usability flags.
 - Optional compact mode (`compact=True`) that shortens big numbers to K (thousands) and M (millions) and decimal precision (`decimals=int`)
@@ -254,9 +254,14 @@ ps.xray(
     outlier_method="iqr",         # or "percentile"/"zscore"
     percentiles=[0.1, 0.5, 0.9],  # custom percentiles
     decimals=2,
+    footnote="Excludes nulls.",   # Great Tables footnote (requires great_tables>=0.22)
+    source_note="Source: …",      # Great Tables source note
+    theme="gray",                 # or 1-6, or {"style": 2, "color": "blue"}
     great_tables=False            # return Polars DataFrame
 )
 ```
+
+`ps.xray()`, `ps.fix()`, and the plotting helpers also accept a Polars `LazyFrame` (collected at the call boundary). Other frame types raise a clear `TypeError` — pandas is not converted automatically.
 
 ### Customizing Beyond the Built-in Options
 

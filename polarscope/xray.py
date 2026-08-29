@@ -12,6 +12,8 @@ import polars as pl
 import polars.selectors as cs
 from great_tables import GT
 
+from .utils import as_dataframe
+
 # Optional scipy imports - lazy loaded to avoid import warnings
 SCIPY_AVAILABLE = None  # Will be checked when needed
 stats = None
@@ -127,7 +129,7 @@ def _get_columns_to_analyze(
 
 
 def xray(
-    df: pl.DataFrame,
+    df: pl.DataFrame | pl.LazyFrame,
     *,
     include: str | list[str] | None = None,
     great_tables: bool = True,
@@ -152,6 +154,9 @@ def xray(
     dec_mark: str = ".",
     compact: bool = False,
     pattern: str | None = None,
+    footnote: str | None = None,
+    source_note: str | None = None,
+    theme: str | int | dict[str, Any] | None = None,
 ) -> Union[GT, pl.DataFrame]:
     """
     X-ray your data: comprehensive statistical analysis with quality assessment.
@@ -162,8 +167,8 @@ def xray(
 
     Parameters
     ----------
-    df : pl.DataFrame
-        The input DataFrame to summarize.
+    df : pl.DataFrame | pl.LazyFrame
+        The input DataFrame to summarize. LazyFrames are collected first.
     include : str, list[str], or None, default None
         Which data types to include in the analysis.
         - None (default): Only numeric columns (Int8, Int16, Int32, Int64, Float32, Float64)
@@ -282,6 +287,21 @@ def xray(
         If True, large numbers are auto-scaled with suffixes (e.g., "10K", "1.5M").
     pattern : str | None, optional
         Text pattern for decorating formatted values (e.g., "[{x}]").
+    footnote : str | None, optional
+        Table footnote applied via Great Tables ``tab_footnote``. Requires
+        ``great_tables=True`` and ``great_tables>=0.22``. For markdown or
+        cell-specific footnotes, chain ``.tab_footnote(...)`` onto the
+        returned GT object instead.
+    source_note : str | None, optional
+        Source note applied via Great Tables ``tab_source_note``. Requires
+        ``great_tables=True``.
+    theme : str | int | dict | None, optional
+        Great Tables ``opt_stylize`` preset. Requires ``great_tables=True``.
+        - color name: ``"blue"``, ``"cyan"``, ``"pink"``, ``"green"``,
+          ``"red"``, or ``"gray"``
+        - style number: ``1`` through ``6``
+        - dict: passed through to ``opt_stylize`` (``style``, ``color``,
+          ``add_row_striping``)
 
     Returns
     -------
@@ -409,6 +429,7 @@ def xray(
     """
     # Start timing for performance measurement
     start_time = time.perf_counter()
+    df = as_dataframe(df)
 
     # Memory usage will be calculated in _format_memory_usage() using unit parameter
 
@@ -458,6 +479,32 @@ def xray(
 
     if isinstance(decimals, bool) or not isinstance(decimals, int) or decimals < 0:
         raise ValueError("decimals must be a non-negative integer")
+
+    _validate_unit_interval("missing_threshold", missing_threshold)
+    _validate_unit_interval("constant_threshold", constant_threshold)
+    _validate_unit_interval("outlier_threshold", outlier_threshold)
+    _validate_non_negative_number("skew_threshold", skew_threshold)
+    _validate_non_negative_number("kurtosis_threshold", kurtosis_threshold)
+    if (
+        isinstance(shakiness_threshold, bool)
+        or not isinstance(shakiness_threshold, int)
+        or shakiness_threshold < 0
+    ):
+        raise ValueError("shakiness_threshold must be a non-negative integer")
+
+    if not great_tables and any(v is not None for v in (footnote, source_note, theme)):
+        raise ValueError("footnote, source_note, and theme require great_tables=True")
+    if footnote is not None and not hasattr(GT, "tab_footnote"):
+        raise ValueError(
+            "footnote requires great_tables>=0.22. "
+            "Upgrade with `pip install -U great_tables`, or omit footnote."
+        )
+    if source_note is not None and not hasattr(GT, "tab_source_note"):
+        raise ValueError(
+            "source_note requires a great_tables build that provides tab_source_note. "
+            "Upgrade with `pip install -U great_tables`, or omit source_note."
+        )
+    theme_kwargs = _theme_to_kwargs(theme) if theme is not None else None
 
     # Validate correlation target
     if corr_target:
@@ -980,41 +1027,51 @@ def xray(
         end_time = time.perf_counter()
         execution_time_ms = (end_time - start_time) * 1000
 
-        return _build_expanded_gt_table(
-            final_df,
-            df.height,
-            df.width,
-            df,
-            execution_time_ms,
-            corr_target,
-            percentiles,
-            decimals,
-            sep_mark,
-            dec_mark,
-            compact,
-            pattern,
-            title,
-            model_usability,
+        return _apply_gt_extras(
+            _build_expanded_gt_table(
+                final_df,
+                df.height,
+                df.width,
+                df,
+                execution_time_ms,
+                corr_target,
+                percentiles,
+                decimals,
+                sep_mark,
+                dec_mark,
+                compact,
+                pattern,
+                title,
+                model_usability,
+            ),
+            footnote=footnote,
+            source_note=source_note,
+            theme_kwargs=theme_kwargs,
         )
     else:
         # Calculate timing
         end_time = time.perf_counter()
         execution_time_ms = (end_time - start_time) * 1000
 
-        return _build_minimal_gt_table(
-            final_df,
-            df.height,
-            df.width,
-            df,
-            execution_time_ms,
-            corr_target,
-            decimals,
-            sep_mark,
-            dec_mark,
-            compact,
-            pattern,
-            title,
-            model_usability,
+        return _apply_gt_extras(
+            _build_minimal_gt_table(
+                final_df,
+                df.height,
+                df.width,
+                df,
+                execution_time_ms,
+                corr_target,
+                decimals,
+                sep_mark,
+                dec_mark,
+                compact,
+                pattern,
+                title,
+                model_usability,
+            ),
+            footnote=footnote,
+            source_note=source_note,
+            theme_kwargs=theme_kwargs,
         )
 
 
@@ -1024,6 +1081,82 @@ def xray(
 def _percentile_to_label(p: float) -> str:
     """Convert percentile float to column label in percent format."""
     return f"{p * 100:.12g}%"
+
+
+_GT_THEME_COLORS = frozenset({"blue", "cyan", "pink", "green", "red", "gray"})
+_GT_THEME_KEYS = frozenset({"style", "color", "add_row_striping"})
+
+
+def _validate_unit_interval(name: str, value: object) -> None:
+    """Require a finite number in [0, 1]."""
+    if isinstance(value, bool) or not isinstance(value, Real) or not math.isfinite(value):
+        raise ValueError(f"{name} must be a finite number between 0 and 1")
+    if not 0 <= float(value) <= 1:
+        raise ValueError(f"{name} must be a finite number between 0 and 1")
+
+
+def _validate_non_negative_number(name: str, value: object) -> None:
+    """Require a finite number that is not negative."""
+    if isinstance(value, bool) or not isinstance(value, Real) or not math.isfinite(value):
+        raise ValueError(f"{name} must be a non-negative finite number")
+    if float(value) < 0:
+        raise ValueError(f"{name} must be a non-negative finite number")
+
+
+def _theme_to_kwargs(theme: str | int | dict[str, Any]) -> dict[str, Any]:
+    """Normalize an xray theme argument to Great Tables opt_stylize kwargs."""
+    if isinstance(theme, str):
+        if theme not in _GT_THEME_COLORS:
+            raise ValueError(
+                f"theme must be one of {sorted(_GT_THEME_COLORS)}, "
+                "an opt_stylize style 1-6, or a dict of opt_stylize arguments"
+            )
+        return {"color": theme}
+    if isinstance(theme, int) and not isinstance(theme, bool):
+        if theme < 1 or theme > 6:
+            raise ValueError("theme style must be an integer from 1 to 6")
+        return {"style": theme}
+    if isinstance(theme, dict):
+        extra = set(theme) - _GT_THEME_KEYS
+        if extra:
+            raise ValueError(
+                f"theme dict keys must be a subset of {sorted(_GT_THEME_KEYS)}, "
+                f"got extra {sorted(extra)}"
+            )
+        if "style" in theme:
+            style = theme["style"]
+            if (
+                isinstance(style, bool)
+                or not isinstance(style, int)
+                or style < 1
+                or style > 6
+            ):
+                raise ValueError("theme style must be an integer from 1 to 6")
+        if "color" in theme and theme["color"] not in _GT_THEME_COLORS:
+            raise ValueError(
+                f"theme color must be one of {sorted(_GT_THEME_COLORS)}"
+            )
+        return dict(theme)
+    raise TypeError(
+        "theme must be a color name, an opt_stylize style 1-6, or a dict"
+    )
+
+
+def _apply_gt_extras(
+    gt_table: GT,
+    *,
+    footnote: str | None,
+    source_note: str | None,
+    theme_kwargs: dict[str, Any] | None,
+) -> GT:
+    """Apply optional Great Tables theming and notes after the built-in styling."""
+    if theme_kwargs:
+        gt_table = gt_table.opt_stylize(**theme_kwargs)
+    if footnote is not None:
+        gt_table = gt_table.tab_footnote(footnote)
+    if source_note is not None:
+        gt_table = gt_table.tab_source_note(source_note)
+    return gt_table
 
 
 def _is_percentile_label(value: str) -> bool:
@@ -1140,7 +1273,7 @@ def _suggest_optimal_dtype(series: pl.Series, current_dtype) -> str:
             return "Int8"
         elif -32768 <= min_val <= 32767 and -32768 <= max_val <= 32767:
             return "Int16"
-        elif -2147483648 <= min_val <= 2147483647:
+        elif -2147483648 <= min_val <= 2147483647 and -2147483648 <= max_val <= 2147483647:
             return "Int32"
         else:
             return "Int64"
