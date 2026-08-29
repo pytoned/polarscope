@@ -254,9 +254,14 @@ ps.xray(
     outlier_method="iqr",         # or "percentile"/"zscore"
     percentiles=[0.1, 0.5, 0.9],  # custom percentiles
     decimals=2,
+    footnote="Excludes nulls.",   # Great Tables footnote
+    source_note="Source: …",      # Great Tables source note
+    theme="gray",                 # or 1-6, or {"style": 2, "color": "blue"}
     great_tables=False            # return Polars DataFrame
 )
 ```
+
+`ps.xray()`, `ps.fix()`, and the plotting helpers also accept a Polars `LazyFrame` (collected at the call boundary). Other frame types raise a clear `TypeError` — pandas is not converted automatically.
 
 ### Customizing Beyond the Built-in Options
 
