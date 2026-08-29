@@ -493,8 +493,9 @@ def corr_heatmap(
 
     Parameters
     ----------
-    df : pl.DataFrame
-        Input DataFrame containing numeric columns to analyze. Non-numeric columns are automatically excluded.
+    df : pl.DataFrame | pl.LazyFrame
+        Input frame containing numeric columns to analyze. Non-numeric columns
+        are automatically excluded. LazyFrames are collected first.
     columns : Sequence[str] | None, optional
         Specific columns to include in correlation analysis. If None, uses all numeric columns.
     split : str | None, optional
@@ -647,8 +648,8 @@ def dist_plot(
 
     Parameters
     ----------
-    df : pl.DataFrame
-        The input DataFrame containing the column to plot.
+    df : pl.DataFrame | pl.LazyFrame
+        The input frame containing the column to plot. LazyFrames are collected first.
     column : str | None, optional
         Name of the numeric column to plot. If None, uses the first numeric column.
     bins : int, default 30
@@ -705,8 +706,8 @@ def missingval_plot(
 
     Parameters
     ----------
-    df : pl.DataFrame
-        The input DataFrame to analyze for missing values.
+    df : pl.DataFrame | pl.LazyFrame
+        The input frame to analyze for missing values. LazyFrames are collected first.
     sort : str, default "desc"
         How to sort columns by missing value count. Options: "desc", "asc", "none".
     normalize : bool, default False
@@ -780,8 +781,8 @@ def cat_plot(
 
     Parameters
     ----------
-    df : pl.DataFrame
-        The input DataFrame containing categorical columns.
+    df : pl.DataFrame | pl.LazyFrame
+        The input frame containing categorical columns. LazyFrames are collected first.
     top : int, default 10
         Number of most frequent categories to show per column.
     bottom : int, default 10  
@@ -872,8 +873,8 @@ def corr_plot(
 
     Parameters
     ----------
-    df : pl.DataFrame
-        The input DataFrame.
+    df : pl.DataFrame | pl.LazyFrame
+        The input frame. LazyFrames are collected first.
     columns : list[str] | None, optional
         Specific columns to include. If None, uses all numeric columns.
     method : str, default "pearson"
