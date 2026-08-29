@@ -981,23 +981,31 @@ def test_xray_threshold_validation() -> None:
 
 
 def test_xray_footnote_source_note_and_theme() -> None:
+    from great_tables import GT
+
     import polarscope as ps
 
     df = pl.DataFrame({"a": [1.0, 2.0, 3.0], "b": [3.0, 2.0, 1.0]})
-    html = ps.xray(
-        df,
-        footnote="Excludes nulls.",
-        source_note="Source: unit test",
-        theme="gray",
-    ).as_raw_html()
-    assert "Excludes nulls." in html
-    assert "Source: unit test" in html
 
     styled = ps.xray(df, theme=2).as_raw_html()
     assert styled != ps.xray(df).as_raw_html()
+    assert "Source: unit test" in ps.xray(df, source_note="Source: unit test").as_raw_html()
+
+    if hasattr(GT, "tab_footnote"):
+        html = ps.xray(
+            df,
+            footnote="Excludes nulls.",
+            source_note="Source: unit test",
+            theme="gray",
+        ).as_raw_html()
+        assert "Excludes nulls." in html
+        assert "Source: unit test" in html
+    else:
+        with pytest.raises(ValueError, match="great_tables>=0.22"):
+            ps.xray(df, footnote="Excludes nulls.")
 
     with pytest.raises(ValueError, match="great_tables=True"):
-        ps.xray(df, footnote="nope", great_tables=False)
+        ps.xray(df, theme="gray", great_tables=False)
     with pytest.raises(ValueError, match="theme"):
         ps.xray(df, theme="purple")
     with pytest.raises(ValueError, match="style"):

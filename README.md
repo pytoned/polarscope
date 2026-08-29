@@ -254,7 +254,7 @@ ps.xray(
     outlier_method="iqr",         # or "percentile"/"zscore"
     percentiles=[0.1, 0.5, 0.9],  # custom percentiles
     decimals=2,
-    footnote="Excludes nulls.",   # Great Tables footnote
+    footnote="Excludes nulls.",   # Great Tables footnote (requires great_tables>=0.22)
     source_note="Source: …",      # Great Tables source note
     theme="gray",                 # or 1-6, or {"style": 2, "color": "blue"}
     great_tables=False            # return Polars DataFrame

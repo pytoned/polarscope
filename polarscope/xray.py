@@ -289,8 +289,9 @@ def xray(
         Text pattern for decorating formatted values (e.g., "[{x}]").
     footnote : str | None, optional
         Table footnote applied via Great Tables ``tab_footnote``. Requires
-        ``great_tables=True``. For markdown or cell-specific footnotes, chain
-        ``.tab_footnote(...)`` onto the returned GT object instead.
+        ``great_tables=True`` and ``great_tables>=0.22``. For markdown or
+        cell-specific footnotes, chain ``.tab_footnote(...)`` onto the
+        returned GT object instead.
     source_note : str | None, optional
         Source note applied via Great Tables ``tab_source_note``. Requires
         ``great_tables=True``.
@@ -493,6 +494,16 @@ def xray(
 
     if not great_tables and any(v is not None for v in (footnote, source_note, theme)):
         raise ValueError("footnote, source_note, and theme require great_tables=True")
+    if footnote is not None and not hasattr(GT, "tab_footnote"):
+        raise ValueError(
+            "footnote requires great_tables>=0.22. "
+            "Upgrade with `pip install -U great_tables`, or omit footnote."
+        )
+    if source_note is not None and not hasattr(GT, "tab_source_note"):
+        raise ValueError(
+            "source_note requires a great_tables build that provides tab_source_note. "
+            "Upgrade with `pip install -U great_tables`, or omit source_note."
+        )
     theme_kwargs = _theme_to_kwargs(theme) if theme is not None else None
 
     # Validate correlation target
