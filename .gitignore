@@ -22,3 +22,6 @@ htmlcov/
 performance_results.json
 demo/performance_results.json
 graphify-out/
+
+# Local-only testing notebooks — never publish
+local/

@@ -760,6 +760,13 @@ def test_xray_internal_helpers() -> None:
 
     assert xray_mod._suggest_optimal_dtype(pl.Series([1.0, 2.0, float("nan")]), pl.Float64) == "Int64"
     assert xray_mod._suggest_optimal_dtype(pl.Series([1.1, 2.2]), pl.Float64) == "Float32"
+    # Int32 must check both ends of the range; a huge max used to be ignored.
+    assert xray_mod._suggest_optimal_dtype(
+        pl.Series([0, 3_000_000_000], dtype=pl.Int64), pl.Int64
+    ) == "Int64"
+    assert xray_mod._suggest_optimal_dtype(
+        pl.Series([-2_000_000_000, 2_000_000_000], dtype=pl.Int64), pl.Int64
+    ) == "Int32"
     # Float64 -> Float32 is suggested only when lossless (round-trip error
     # <= 1e-6), mirroring the shrink policy fix()/convert_datatypes applies.
     assert xray_mod._suggest_optimal_dtype(
@@ -935,3 +942,104 @@ def test_corr_plot_cluster_fallback(monkeypatch: pytest.MonkeyPatch) -> None:
 def test_seaborn_backend_removed() -> None:
     """Verify seaborn backend was removed and raises clear error."""
     assert "seaborn" not in plots_mod._VALID_BACKENDS
+
+
+def test_as_dataframe_accepts_lazyframe_and_rejects_other_types() -> None:
+    import polarscope as ps
+
+    frame = pl.DataFrame({"a": [1, 2, 3], "b": [3, 2, 1]})
+    lazy = frame.lazy()
+
+    out = ps.xray(lazy, great_tables=False)
+    assert out.height == 2
+    assert ps.fix(lazy, verbose=False).height == frame.height
+    assert ps.dist_plot(lazy) is not None
+
+    with pytest.raises(TypeError, match="Polars DataFrame or LazyFrame"):
+        ps.xray(object(), great_tables=False)
+
+    with pytest.raises(TypeError, match="pl.from_pandas"):
+        ps.fix([1, 2, 3], verbose=False)
+
+
+def test_xray_threshold_validation() -> None:
+    import polarscope as ps
+
+    df = pl.DataFrame({"a": [1.0, 2.0, 3.0]})
+    with pytest.raises(ValueError, match="missing_threshold"):
+        ps.xray(df, missing_threshold=1.5, great_tables=False)
+    with pytest.raises(ValueError, match="constant_threshold"):
+        ps.xray(df, constant_threshold=-0.1, great_tables=False)
+    with pytest.raises(ValueError, match="outlier_threshold"):
+        ps.xray(df, outlier_threshold=float("nan"), great_tables=False)
+    with pytest.raises(ValueError, match="skew_threshold"):
+        ps.xray(df, skew_threshold=-1, great_tables=False)
+    with pytest.raises(ValueError, match="shakiness_threshold"):
+        ps.xray(df, shakiness_threshold=-1, great_tables=False)
+    with pytest.raises(ValueError, match="shakiness_threshold"):
+        ps.xray(df, shakiness_threshold=True, great_tables=False)
+
+
+def test_xray_footnote_source_note_and_theme() -> None:
+    from great_tables import GT
+
+    import polarscope as ps
+
+    df = pl.DataFrame({"a": [1.0, 2.0, 3.0], "b": [3.0, 2.0, 1.0]})
+
+    styled = ps.xray(df, theme=2).as_raw_html()
+    assert styled != ps.xray(df).as_raw_html()
+    assert "Source: unit test" in ps.xray(df, source_note="Source: unit test").as_raw_html()
+
+    if hasattr(GT, "tab_footnote"):
+        html = ps.xray(
+            df,
+            footnote="Excludes nulls.",
+            source_note="Source: unit test",
+            theme="gray",
+        ).as_raw_html()
+        assert "Excludes nulls." in html
+        assert "Source: unit test" in html
+    else:
+        with pytest.raises(ValueError, match="great_tables>=0.22"):
+            ps.xray(df, footnote="Excludes nulls.")
+
+    with pytest.raises(ValueError, match="great_tables=True"):
+        ps.xray(df, theme="gray", great_tables=False)
+    with pytest.raises(ValueError, match="theme"):
+        ps.xray(df, theme="purple")
+    with pytest.raises(ValueError, match="style"):
+        ps.xray(df, theme=9)
+    with pytest.raises(ValueError, match="theme dict keys"):
+        ps.xray(df, theme={"colorscale": "blue"})
+
+
+def test_correlation_plots_treat_undefined_as_missing() -> None:
+    """Constant columns yield undefined correlations; those must not render as nan."""
+    df = pl.DataFrame(
+        {
+            "const": [1.0, 1.0, 1.0, 1.0],
+            "b": [1.0, 2.0, 3.0, 4.0],
+            "c": [4.0, 3.0, 2.0, 1.0],
+        }
+    )
+    matrix = plots_mod._correlation_matrix(df, ["const", "b", "c"], "pearson")
+    assert matrix[0][1] is None
+    assert matrix[1][2] == pytest.approx(-1.0)
+
+    heatmap = plots_mod.corr_heatmap(df, split="high", threshold=0.3, backend="plotly")
+    assert heatmap is not None
+
+    target = plots_mod.corr_heatmap(df, target="b", backend="plotly")
+    texts = [cell for row in target.data[0].text for cell in row]
+    assert "nan" not in texts
+    assert any(cell == "" for cell in texts)
+
+    plot = plots_mod.corr_plot(df, backend="plotly")
+    plot_texts = [cell for row in plot.data[0].text for cell in row]
+    assert "nan" not in plot_texts
+
+
+def test_save_fig_rejects_unknown_objects() -> None:
+    with pytest.raises(TypeError, match="Don't know how to save"):
+        utils_mod.save_fig(object(), "/tmp/out.png")

@@ -16,6 +16,8 @@ import unicodedata
 
 import polars as pl
 
+from .utils import as_dataframe
+
 # Case styles accepted by clean_column_names / fix
 _CASE_STYLES = ("snake", "camel", "pascal", "kebab", "upper", "lower")
 
@@ -57,7 +59,7 @@ def _normalize(s: str, case: str = "lower", ascii_only: bool = True) -> str:
 
 
 def clean_column_names(
-    df: pl.DataFrame,
+    df: pl.DataFrame | pl.LazyFrame,
     *,
     case: str = "lower",
     ascii_only: bool = True,
@@ -68,8 +70,8 @@ def clean_column_names(
 
     Parameters
     ----------
-    df : pl.DataFrame
-        The input DataFrame.
+    df : pl.DataFrame | pl.LazyFrame
+        The input DataFrame. LazyFrames are collected first.
     case : str, default "lower"
         Naming style for the cleaned columns:
         - "snake":  my_column_name (splits camelCase words)
@@ -86,6 +88,7 @@ def clean_column_names(
     if case not in _CASE_STYLES:
         raise ValueError(f"case must be one of {_CASE_STYLES}, got {case!r}")
 
+    df = as_dataframe(df)
     old = list(df.columns)
     seen: dict[str, int] = {}
     used: set[str] = set()
@@ -114,7 +117,7 @@ def clean_column_names(
 
 
 def convert_datatypes(
-    df: pl.DataFrame,
+    df: pl.DataFrame | pl.LazyFrame,
     *,
     max_cardinality: int = 20,
     categorical_threshold: float = 0.5,
@@ -129,8 +132,8 @@ def convert_datatypes(
 
     Parameters
     ----------
-    df : pl.DataFrame
-        The input DataFrame to optimize.
+    df : pl.DataFrame | pl.LazyFrame
+        The input DataFrame to optimize. LazyFrames are collected first.
     max_cardinality : int, default 20
         Maximum unique values for converting strings to categorical.
     categorical_threshold : float, default 0.5
@@ -150,6 +153,7 @@ def convert_datatypes(
     pl.DataFrame
         DataFrame with optimized data types.
     """
+    df = as_dataframe(df)
     result = df.clone()
 
     transformations: list[pl.Expr] = []
@@ -215,7 +219,7 @@ def convert_datatypes(
 
 
 def drop_missing(
-    df: pl.DataFrame,
+    df: pl.DataFrame | pl.LazyFrame,
     *,
     axis: str = "rows",
     thresh: float | None = None,
@@ -226,8 +230,8 @@ def drop_missing(
 
     Parameters
     ----------
-    df : pl.DataFrame
-        The input DataFrame.
+    df : pl.DataFrame | pl.LazyFrame
+        The input DataFrame. LazyFrames are collected first.
     axis : str, default "rows"
         Whether to drop "rows" or "columns" with missing values.
     thresh : float | None, optional
@@ -242,6 +246,7 @@ def drop_missing(
     pl.DataFrame
         DataFrame with missing values dropped.
     """
+    df = as_dataframe(df)
     if thresh is not None and not 0.0 <= thresh <= 1.0:
         raise ValueError("thresh must be between 0 and 1")
 
@@ -305,7 +310,7 @@ def _fmt_size(n_bytes: float) -> str:
 
 
 def fix(
-    df: pl.DataFrame,
+    df: pl.DataFrame | pl.LazyFrame,
     *,
     case: str | None = "snake",
     strip_strings: bool = True,
@@ -326,8 +331,9 @@ def fix(
 
     Parameters
     ----------
-    df : pl.DataFrame
+    df : pl.DataFrame | pl.LazyFrame
         The input DataFrame. Never mutated; a cleaned copy is returned.
+        LazyFrames are collected first.
     case : str | None, default "snake"
         Column naming style: "snake", "camel", "pascal", "kebab", "upper",
         "lower", or None to leave names untouched.
@@ -368,6 +374,7 @@ def fix(
     >>> df = ps.fix(df, case="camel")            # camelCase headers
     >>> df = ps.fix(df, drop_duplicate_rows=True, missing_threshold=0.9)
     """
+    df = as_dataframe(df)
     if outliers is not None and outliers not in ("iqr", "zscore"):
         raise ValueError("outliers must be None, 'iqr', or 'zscore'")
     if missing_threshold is not None and not 0.0 <= missing_threshold <= 1.0:

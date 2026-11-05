@@ -31,6 +31,7 @@ import polars.selectors as cs
 
 # Moved to polarscope.clean; re-exported here for backward compatibility.
 from .clean import convert_datatypes, drop_missing  # noqa: F401
+from .utils import as_dataframe
 
 # ---------- helpers ----------
 
@@ -107,6 +108,17 @@ def _ensure_columns(df: pl.DataFrame, columns: Iterable[str] | None) -> list[str
         return [c for c in valid_cols if dtypes[c].is_numeric()]
 
 
+def _finite_correlation(value: object) -> float | None:
+    """Coerce a correlation to float, treating null/NaN/Inf as missing."""
+    if value is None:
+        return None
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        return None
+    return number if math.isfinite(number) else None
+
+
 def _correlation_matrix(
     df: pl.DataFrame,
     columns: Sequence[str],
@@ -129,8 +141,7 @@ def _correlation_matrix(
         [None for _ in columns] for _ in columns
     ]
     for row_idx, col_idx, alias in positions:
-        value = correlation_row[alias]
-        correlation = float(value) if value is not None else None
+        correlation = _finite_correlation(correlation_row[alias])
         matrix[row_idx][col_idx] = correlation
         matrix[col_idx][row_idx] = correlation
 
@@ -274,7 +285,7 @@ def _corr_plot_plotly(columns: list[str], corr_matrix: list, method: str, cluste
         zmin=-1,
         zmax=1,
         colorbar=dict(title=f"{method.title()}<br>Correlation"),
-        text=[[f"{val:.3f}" for val in row] for row in corr_matrix],
+        text=[["" if val is None else f"{val:.3f}" for val in row] for row in corr_matrix],
         texttemplate="%{text}",
         textfont={"size": 10},
         hovertemplate='<b>%{y}</b> vs <b>%{x}</b><br>' +
@@ -462,7 +473,7 @@ def _corr_plot_altair(columns: list[str], corr_matrix: list, method: str, width,
 
 
 def corr_heatmap(
-    df: pl.DataFrame,
+    df: pl.DataFrame | pl.LazyFrame,
     columns: Sequence[str] | None = None,
     *,
     split: str | None = None,
@@ -482,8 +493,9 @@ def corr_heatmap(
 
     Parameters
     ----------
-    df : pl.DataFrame
-        Input DataFrame containing numeric columns to analyze. Non-numeric columns are automatically excluded.
+    df : pl.DataFrame | pl.LazyFrame
+        Input frame containing numeric columns to analyze. Non-numeric columns
+        are automatically excluded. LazyFrames are collected first.
     columns : Sequence[str] | None, optional
         Specific columns to include in correlation analysis. If None, uses all numeric columns.
     split : str | None, optional
@@ -534,7 +546,8 @@ def corr_heatmap(
         raise ValueError("threshold must be between 0 and 1")
     
     _validate_backend(backend)
-    
+    df = as_dataframe(df)
+
     # Set default threshold for high/low splits
     if split in ["high", "low"] and threshold == 0.0:
         threshold = 0.3
@@ -566,10 +579,7 @@ def corr_heatmap(
                 for col in cols
             ]
         ).row(0, named=True)
-        correlations = [
-            correlation_row[col] if correlation_row[col] is not None else 0.0
-            for col in cols
-        ]
+        correlations = [_finite_correlation(correlation_row[col]) for col in cols]
         
         # Create target correlation matrix (1 row)
         mat = [correlations]
@@ -589,10 +599,12 @@ def corr_heatmap(
     # Apply split filtering if specified
     if split:
         filtered_mat = []
-        for i, row in enumerate(mat):
+        for row in mat:
             filtered_row = []
-            for j, val in enumerate(row):
-                if split == "pos" and val > threshold:
+            for val in row:
+                if val is None:
+                    filtered_row.append(None)
+                elif split == "pos" and val > threshold:
                     filtered_row.append(val)
                 elif split == "neg" and val < -threshold:
                     filtered_row.append(val)
@@ -623,7 +635,7 @@ def corr_heatmap(
         raise ValueError(_BACKEND_ERROR)
 
 def dist_plot(
-    df: pl.DataFrame,
+    df: pl.DataFrame | pl.LazyFrame,
     column: str | None = None,
     *,
     bins: int = 30,
@@ -636,8 +648,8 @@ def dist_plot(
 
     Parameters
     ----------
-    df : pl.DataFrame
-        The input DataFrame containing the column to plot.
+    df : pl.DataFrame | pl.LazyFrame
+        The input frame containing the column to plot. LazyFrames are collected first.
     column : str | None, optional
         Name of the numeric column to plot. If None, uses the first numeric column.
     bins : int, default 30
@@ -657,6 +669,7 @@ def dist_plot(
         docstring.
     """
     _validate_backend(backend)
+    df = as_dataframe(df)
 
     cols = _numeric_columns(df)
     if column is None:
@@ -680,7 +693,7 @@ def dist_plot(
 
 
 def missingval_plot(
-    df: pl.DataFrame,
+    df: pl.DataFrame | pl.LazyFrame,
     *,
     sort: str = "desc",
     normalize: bool = False,
@@ -693,8 +706,8 @@ def missingval_plot(
 
     Parameters
     ----------
-    df : pl.DataFrame
-        The input DataFrame to analyze for missing values.
+    df : pl.DataFrame | pl.LazyFrame
+        The input frame to analyze for missing values. LazyFrames are collected first.
     sort : str, default "desc"
         How to sort columns by missing value count. Options: "desc", "asc", "none".
     normalize : bool, default False
@@ -714,11 +727,12 @@ def missingval_plot(
         ``ps.missingval_plot(df).update_layout(template="plotly_dark")`` -
         see the module docstring.
     """
-    cols = list(df.columns)
     if sort not in {"desc", "asc", "none"}:
         raise ValueError("sort must be 'desc', 'asc', or 'none'")
 
     _validate_backend(backend)
+    df = as_dataframe(df)
+    cols = list(df.columns)
 
     if not cols:
         return _empty_plot("No columns", backend, width, height)
@@ -754,7 +768,7 @@ def missingval_plot(
 
 
 def cat_plot(
-    df: pl.DataFrame,
+    df: pl.DataFrame | pl.LazyFrame,
     *,
     top: int = 10,
     bottom: int = 10,
@@ -767,8 +781,8 @@ def cat_plot(
 
     Parameters
     ----------
-    df : pl.DataFrame
-        The input DataFrame containing categorical columns.
+    df : pl.DataFrame | pl.LazyFrame
+        The input frame containing categorical columns. LazyFrames are collected first.
     top : int, default 10
         Number of most frequent categories to show per column.
     bottom : int, default 10  
@@ -791,6 +805,7 @@ def cat_plot(
         raise ValueError("top and bottom must be non-negative")
 
     _validate_backend(backend)
+    df = as_dataframe(df)
 
     # Get categorical columns (string/categorical types)
     cat_cols = [
@@ -843,7 +858,7 @@ def cat_plot(
 
 
 def corr_plot(
-    df: pl.DataFrame,
+    df: pl.DataFrame | pl.LazyFrame,
     columns: list[str] | None = None,
     *,
     method: str = "pearson",
@@ -858,8 +873,8 @@ def corr_plot(
 
     Parameters
     ----------
-    df : pl.DataFrame
-        The input DataFrame.
+    df : pl.DataFrame | pl.LazyFrame
+        The input frame. LazyFrames are collected first.
     columns : list[str] | None, optional
         Specific columns to include. If None, uses all numeric columns.
     method : str, default "pearson"
@@ -884,6 +899,7 @@ def corr_plot(
         docstring.
     """
     _validate_backend(backend)
+    df = as_dataframe(df)
 
     # Get numeric columns
     if columns is None:
