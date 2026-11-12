@@ -177,7 +177,7 @@ Customizing an Altair chart object using method chaining:
 
 ## 🔍 How Polarscope compares
 
-| | **polarscope** 1.9.6 | skimpy 0.0.21 | ydata-profiling 4.18.4 | klib 1.4.1 |
+| | **polarscope** 1.10.0 | skimpy 0.0.21 | ydata-profiling 4.18.4 | klib 1.4.1 |
 |---|---|---|---|---|
 | Takes a Polars DataFrame directly | ✅ | ✅ | ❌ convert to pandas first | ❌ convert to pandas first |
 | Requires/converts to pandas | **✅ never** | ❌ hard dependency | ❌ | ❌ |
