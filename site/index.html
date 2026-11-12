@@ -4,7 +4,7 @@
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>Polarscope — Simple data inspection for Polars</title>
-<meta name="description" content="Polarscope is a Polars-native data inspection library. Its xray() function gives you summary stats, distribution nanoplots, outlier and normality tests, and beautiful Great Tables output — no Pandas required." />
+<meta name="description" content="Polarscope is a Polars-native data inspection library. Its xray() function gives you summary stats, distribution nanoplots, outlier and normality tests, and beautiful Great Tables output for DataFrames and LazyFrames — no Pandas required." />
 <meta property="og:title" content="🔬 Polarscope" />
 <meta property="og:description" content="X-ray your Polars DataFrames: summary stats, histogram nanoplots, outliers & correlations in one beautiful table." />
 <meta property="og:type" content="website" />
@@ -173,6 +173,15 @@
   /* ---------- feature grid ---------- */
   .grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 1.4rem; margin-top: 3rem; }
   @media (max-width: 860px) { .grid { grid-template-columns: 1fr; } }
+  .card.wide { grid-column: 1 / -1; display: grid; grid-template-columns: 1.5fr 1fr; gap: 2rem; align-items: center; }
+  @media (max-width: 860px) { .card.wide { grid-template-columns: 1fr; gap: 1.4rem; } }
+  .card .tag { display: inline-block; margin-left: .5rem; padding: .1rem .55rem; border-radius: 999px; background: var(--pink-100); color: var(--pink-700); font-size: .72rem; font-weight: 800; letter-spacing: .06em; text-transform: uppercase; vertical-align: middle; }
+  .stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: .7rem; }
+  .stat { background: var(--pink-50); border: 1px solid var(--line); border-radius: 14px; padding: 1rem .5rem; text-align: center; }
+  .stat b { display: block; font-size: 1.65rem; font-weight: 900; letter-spacing: -.02em; line-height: 1.15; }
+  .stat span { font-size: .8rem; color: var(--ink-500); }
+  @media (max-width: 480px) { .stat b { font-size: 1.2rem; } .stat span { font-size: .72rem; } }
+  .stats-note { grid-column: 1 / -1; font-size: .78rem; color: var(--ink-500); text-align: center; margin-top: .2rem; }
   .card {
     background: #fff; border: 1px solid var(--line); border-radius: var(--radius);
     padding: 1.8rem; box-shadow: var(--shadow-sm); transition: transform .18s ease, box-shadow .18s ease, border-color .18s;
@@ -247,7 +256,7 @@
   <div class="wrap">
     <span class="pill"><span class="dot"></span> Polars-native data inspection · built with Great Tables</span>
     <h1 class="title">X-ray your data.<br /><span class="grad">See everything at a glance.</span></h1>
-    <p class="subtitle">Polarscope turns a <b>Polars DataFrame</b> into one beautiful, information-dense table — summary stats, distribution nanoplots, outliers, normality tests and correlations. <b>No Pandas required.</b></p>
+    <p class="subtitle">Polarscope turns a <b>Polars DataFrame or LazyFrame</b> into one beautiful, information-dense table: summary stats, distribution nanoplots, outliers, normality tests and correlations. LazyFrames are streamed, never collected. <b>No Pandas required.</b></p>
 
     <div class="cta">
       <a class="btn btn-primary" href="https://pypi.org/project/polarscope/" target="_blank" rel="noopener">
@@ -333,6 +342,19 @@
     <p class="lead">One function call. Six kinds of insight. Rendered as a table you'll actually want to look at.</p>
 
     <div class="grid">
+      <div class="card wide reveal">
+        <div>
+          <div class="ico">🌊</div>
+          <h3>LazyFrames, bigger than memory <span class="tag">New</span></h3>
+          <p>Pass <code>pl.scan_parquet(...)</code> or any lazy query straight to <code>xray()</code>. It streams the data instead of collecting it, so memory stays flat however many rows there are. Need exact quartiles? <code>exact=True</code> reads one column at a time, and a built-in memory guard never lets a summary outgrow your machine.</p>
+        </div>
+        <div class="stats">
+          <div class="stat"><b>200M</b><span>rows</span></div>
+          <div class="stat"><b>36 s</b><span>to x-ray</span></div>
+          <div class="stat"><b>0.9 GB</b><span>peak memory</span></div>
+          <p class="stats-note">Streaming <code>xray(lf, include="all")</code> on a 12-column Parquet dataset that needs about 19 GB as a DataFrame.</p>
+        </div>
+      </div>
       <div class="card reveal">
         <div class="ico">🔬</div>
         <h3>One-call <code>xray()</code></h3>
@@ -375,7 +397,7 @@
       <div class="reveal">
         <h3>Install &amp; x-ray</h3>
         <ul>
-          <li>Works with Polars DataFrames only</li>
+          <li>Works with Polars DataFrames and LazyFrames</li>
           <li>Targeted correlations via <code>corr_target</code></li>
           <li>Choose your outlier method: IQR, percentile or z-score</li>
           <li>Render rich Great Tables or raw Polars output</li>
@@ -395,6 +417,9 @@
 
 <span class="tok-com"># the whole library, in one call</span>
 ps.<span class="tok-fn">xray</span>(<span class="tok-var">df</span>)
+
+<span class="tok-com"># bigger than memory? pass a LazyFrame, nothing is collected</span>
+ps.<span class="tok-fn">xray</span>(pl.<span class="tok-fn">scan_parquet</span>(<span class="tok-str">"events/*.parquet"</span>))
 
 <span class="tok-com"># go deeper: tests, outliers, correlations</span>
 ps.<span class="tok-fn">xray</span>(

@@ -1,4 +1,4 @@
-![Polarscope — x-ray your Polars DataFrames: summary stats, distribution nanoplots, outliers and correlations in one table](docs/img/polarscope-cover.svg)
+![Polarscope — x-ray your Polars DataFrames: summary stats, distribution nanoplots, outliers and correlations in one table](https://raw.githubusercontent.com/pytoned/polarscope/main/docs/img/polarscope-cover.svg)
 
 # 🔬 Polarscope - describe() on steroids
 
@@ -12,13 +12,13 @@ df = pl.read_csv('your-data.csv')
 ps.xray(df)
 ```
 
-![polarscope xray() profiling 70,000 rows in 21 ms](docs/img/xray-hero.png)
+![polarscope xray() profiling 70,000 rows in 21 ms](https://raw.githubusercontent.com/pytoned/polarscope/main/docs/img/xray-hero.png)
 
 <sub>70,000 rows × 13 columns profiled in 21 ms — every column's dtype, nulls, quartiles, outliers, skew and distribution in a single call.</sub>
 
 [![PyPI](https://img.shields.io/pypi/v/polarscope.svg)](https://pypi.org/project/polarscope/)
 [![PyPI - Python Version](https://img.shields.io/pypi/pyversions/polarscope.svg)](https://pypi.org/project/polarscope/)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://github.com/pytoned/polarscope/blob/main/LICENSE)
 [![PyPI Downloads](https://static.pepy.tech/personalized-badge/polarscope?period=total&units=INTERNATIONAL_SYSTEM&left_color=BLACK&right_color=GREEN&left_text=downloads)](https://pepy.tech/projects/polarscope)
 
 **Simple data inspection tools for Polars** 🐻‍❄️
@@ -45,7 +45,7 @@ Polarscope is a basic data analysis library for Polars DataFrames. It provides a
 
 Quickly compute the correlation (Spearman or Pearson) to a target column:
 
-![xray() on a DataFrame with correlation to target column enabled](docs/img/xray_corr.png)
+![xray() on a DataFrame with correlation to target column enabled](https://raw.githubusercontent.com/pytoned/polarscope/main/docs/img/xray_corr.png)
 
 ### 🧹 Cleaning & Optimization (`fix`)
 - `ps.fix(df)` cleans and optimizes in one call: column renaming (`case="snake"/"camel"/"pascal"/"kebab"/"upper"/"lower"`), whitespace stripping (empty strings → null), dtype shrinking, and empty-column removal — with a compact report of what changed.
@@ -102,7 +102,7 @@ from great_tables import md, loc, style   # imported to enable extra functionali
 
 Customizing a GT table using method chaining:
 
-![Customizing a GT table using method chaining](docs/img/gt_styling.png)
+![Customizing a GT table using method chaining](https://raw.githubusercontent.com/pytoned/polarscope/main/docs/img/gt_styling.png)
 
 
 Plotly customization:
@@ -129,7 +129,7 @@ Plotly customization:
 
 Customizing a Plotly go object using method chaining:
 
-![Customizing a Plotly chart](docs/img/plotly_styling.png)
+![Customizing a Plotly chart](https://raw.githubusercontent.com/pytoned/polarscope/main/docs/img/plotly_styling.png)
 
 
 Altair customization:
@@ -171,7 +171,7 @@ final_chart.show()
 
 Customizing an Altair chart object using method chaining:
 
-![Customizing an Altair chart object using method chaining](docs/img/altair_styling.png)
+![Customizing an Altair chart object using method chaining](https://raw.githubusercontent.com/pytoned/polarscope/main/docs/img/altair_styling.png)
 
 ---
 
@@ -382,7 +382,7 @@ Contributions are welcome! Feel free to report bugs or suggest improvements.
 
 ## 📄 License
 
-MIT License - see [LICENSE](LICENSE) file for details.
+MIT License - see [LICENSE](https://github.com/pytoned/polarscope/blob/main/LICENSE) file for details.
 
 ---
 
