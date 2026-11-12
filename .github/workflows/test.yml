@@ -2,7 +2,7 @@ name: Test
 
 on:
   push:
-    branches: [main, experimentv2]
+    branches: [main, dev, experimentv2]
   pull_request:
   workflow_call:
 
@@ -12,7 +12,10 @@ permissions:
 jobs:
   test:
     name: Python ${{ matrix.python-version }}
-    runs-on: ubuntu-latest
+    # ubuntu-latest is Ubuntu 26.04, for which actions/setup-python has no
+    # Python 3.9 build (3.9 is end-of-life; its last builds are for 22.04 and
+    # 24.04), so the 3.9 job stays on 24.04.
+    runs-on: ${{ matrix.python-version == '3.9' && 'ubuntu-24.04' || 'ubuntu-latest' }}
     strategy:
       fail-fast: false
       matrix:
@@ -35,7 +38,8 @@ jobs:
 
   minimum-dependencies:
     name: Minimum dependencies
-    runs-on: ubuntu-latest
+    # Python 3.9: see the test job.
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v5
 
@@ -48,10 +52,10 @@ jobs:
           python -m pip install --upgrade pip
           python -m pip install -e . --no-deps
           python -m pip install \
-            "polars==1.0.0" \
+            "polars==1.34.0" \
             "plotly==5.20.0" \
             "great_tables==0.10.0" \
-            "altair==5.0.0" \
+            "altair==5.4.0" \
             "scipy==1.10.0" \
             "kaleido==0.2.1" \
             "pytest==7.0.0" \
@@ -106,7 +110,7 @@ jobs:
           python -m build
           python -m twine check dist/*
 
-      - name: Ensure tests are not shipped in the wheel
+      - name: Check wheel contents
         run: |
           python - <<'PY'
           from pathlib import Path
@@ -114,5 +118,9 @@ jobs:
 
           wheel = next(Path("dist").glob("*.whl"))
           with ZipFile(wheel) as archive:
-              assert not any(name.startswith("tests/") for name in archive.namelist())
+              names = archive.namelist()
+              assert not any(name.startswith("tests/") for name in names)
+              # The bundled datasets must ship, or ps.titanic() & co. fail.
+              for dataset in ("titanic", "diabetes", "cardio"):
+                  assert f"polarscope/data/{dataset}.parquet" in names, dataset
           PY

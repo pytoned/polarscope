@@ -18,7 +18,7 @@ classifiers = [
   "Topic :: Scientific/Engineering :: Information Analysis",
 ]
 dependencies = [
-  "polars>=1.0.0",
+  "polars>=1.34",
   "plotly>=5.20",
   "great_tables>=0.10"
 ]
@@ -32,13 +32,14 @@ Issues = "https://github.com/pytoned/polarscope/issues"
 
 [project.optional-dependencies]
 plotly = ["kaleido>=0.2"]
-altair = ["altair>=5"]
+altair = ["altair>=5.4"]
 scipy = ["scipy>=1.10"]
-all = ["kaleido>=0.2", "altair>=5", "scipy>=1.10"]
-dev = ["pytest>=7.0", "pytest-cov>=4.0", "psutil>=5.9"]
+all = ["kaleido>=0.2", "altair>=5.4", "scipy>=1.10"]
+dev = ["pytest>=7.0", "pytest-cov>=4.0", "psutil>=5.9", "numpy>=1.21"]
 
 [build-system]
-requires = ["setuptools>=68", "wheel"]
+# A plain SPDX string in project.license (PEP 639) needs setuptools 77+.
+requires = ["setuptools>=77", "wheel"]
 build-backend = "setuptools.build_meta"
 
 # Single source of truth for the version: polarscope/__init__.py (__version__).
@@ -62,4 +63,10 @@ select = ["E4", "E7", "E9", "F", "I"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-filterwarnings = ["ignore::DeprecationWarning"]
+# Deprecations from third-party code stay quiet, but a deprecated Polars API
+# called from polarscope fails the run (Polars attributes its warnings to the
+# calling module). Later entries take precedence.
+filterwarnings = [
+  "ignore::DeprecationWarning",
+  "error::DeprecationWarning:polarscope",
+]

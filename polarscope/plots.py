@@ -29,6 +29,8 @@ from typing import Iterable, List, Sequence
 import polars as pl
 import polars.selectors as cs
 
+from ._helpers import literal_name_map, require_dataframe
+
 # Moved to polarscope.clean; re-exported here for backward compatibility.
 from .clean import convert_datatypes, drop_missing  # noqa: F401
 
@@ -85,6 +87,38 @@ def _empty_plot(message: str, backend: str, width, height):
     return _apply_chart_size(chart, width, height)
 
 
+def _altair_data(rows: list[dict]):
+    """Wrap already aggregated rows (bins, categories, matrix cells) for Altair.
+
+    Altair's default data transformer refuses DataFrames with more than 5,000
+    rows when a chart is serialized (``MaxRowsError``), which a 71-column
+    correlation matrix already exceeds. Inline values are not subject to that
+    check, so these charts render at any size without touching the user's
+    global ``alt.data_transformers`` setting. Non-finite floats become None so
+    the spec stays valid JSON.
+    """
+    alt = _require_altair()
+    values = [
+        {
+            key: None if isinstance(value, float) and not math.isfinite(value) else value
+            for key, value in row.items()
+        }
+        for row in rows
+    ]
+    return alt.InlineData(values=values)
+
+
+def _literal_columns(df: pl.DataFrame) -> tuple[pl.DataFrame, dict[str, str]]:
+    """Rename pattern-like column names (``"*"``, ``"^a.*$"``) to safe stand-ins.
+
+    ``pl.col(name)`` expands such names as a wildcard or regex. Build
+    expressions with ``mapping.get(name, name)`` on the returned frame and keep
+    showing the original names.
+    """
+    mapping = literal_name_map(df.columns)
+    return (df.rename(mapping) if mapping else df), mapping
+
+
 def _numeric_columns(df: pl.DataFrame) -> list[str]:
     try:
         return list(df.select(cs.numeric()).columns)
@@ -107,43 +141,172 @@ def _ensure_columns(df: pl.DataFrame, columns: Iterable[str] | None) -> list[str
         return [c for c in valid_cols if dtypes[c].is_numeric()]
 
 
+def _pairwise_correlations(
+    df: pl.DataFrame,
+    pairs: Sequence[tuple[str, str]],
+    method: str,
+) -> list[float | None]:
+    """Correlation of each ``(a, b)`` column pair, computed in one ``select``.
+
+    For Spearman, every column without nulls is ranked once and a pair of such
+    columns gets the Pearson correlation of their ranks. That is exactly what
+    ``pl.corr(method="spearman")`` computes (both rank NaN highest), without
+    re-ranking both columns for every pair. ``pl.corr`` drops the rows where
+    either column is null before ranking, so pairs involving a column with
+    nulls keep the per-pair Spearman.
+    """
+    if not pairs:
+        return []
+    work, mapping = _literal_columns(df)
+    names = list(dict.fromkeys(name for pair in pairs for name in pair))
+    alias = {name: f"c{i}" for i, name in enumerate(names)}
+    work = work.select(
+        [pl.col(mapping.get(name, name)).alias(alias[name]) for name in names]
+    )
+
+    ranked: set[str] = set()
+    if method == "spearman":
+        null_counts = work.null_count().row(0)
+        ranked = {c for c, nulls in zip(work.columns, null_counts) if nulls == 0}
+        work = work.with_columns(
+            [pl.col(c).rank("average").alias(f"r{c}") for c in work.columns if c in ranked]
+        )
+
+    expressions = []
+    for k, (a, b) in enumerate(pairs):
+        x, y = alias[a], alias[b]
+        if x in ranked and y in ranked:
+            expression = pl.corr(f"r{x}", f"r{y}", method="pearson")
+        else:
+            expression = pl.corr(x, y, method=method)
+        expressions.append(expression.alias(f"p{k}"))
+
+    return [
+        float(value) if value is not None else None
+        for value in work.select(expressions).row(0)
+    ]
+
+
 def _correlation_matrix(
     df: pl.DataFrame,
     columns: Sequence[str],
     method: str,
 ) -> list[list[float | None]]:
     """Compute a symmetric correlation matrix with Polars expressions."""
-    expressions = []
-    positions = []
-    for row_idx, row_name in enumerate(columns):
-        for col_idx in range(row_idx, len(columns)):
-            col_name = columns[col_idx]
-            alias = f"__corr_{row_idx}_{col_idx}"
-            expressions.append(
-                pl.corr(row_name, col_name, method=method).alias(alias)
-            )
-            positions.append((row_idx, col_idx, alias))
-
-    correlation_row = df.select(expressions).row(0, named=True)
+    positions = [
+        (row_idx, col_idx)
+        for row_idx in range(len(columns))
+        for col_idx in range(row_idx, len(columns))
+    ]
+    values = _pairwise_correlations(
+        df, [(columns[i], columns[j]) for i, j in positions], method
+    )
     matrix: list[list[float | None]] = [
         [None for _ in columns] for _ in columns
     ]
-    for row_idx, col_idx, alias in positions:
-        value = correlation_row[alias]
-        correlation = float(value) if value is not None else None
+    for (row_idx, col_idx), correlation in zip(positions, values):
         matrix[row_idx][col_idx] = correlation
         matrix[col_idx][row_idx] = correlation
 
     return matrix
 
 
+def _nice_bins(
+    lo: float, hi: float, max_bins: int, min_step: float
+) -> tuple[float, float, float, int]:
+    """Choose bins for ``[lo, hi]`` the way Vega-Lite's ``maxbins`` does.
+
+    Returns ``(start, stop, step, precision)``: a "nice" step (1, 2 or 5 times
+    a power of ten, at least ``min_step``) that gives at most about
+    ``max_bins`` bins, ``start``/``stop`` rounded outwards to multiples of it,
+    and the number of decimals to round bin edges to.
+    """
+    span = (hi - lo) or abs(lo) or 1.0
+    level = math.ceil(math.log10(max_bins))
+    step = max(min_step, 10.0 ** (math.floor(math.log10(span) + 0.5) - level))
+    while math.ceil(span / step) > max_bins:
+        step *= 10
+    for divisor in (5, 2):
+        if step / divisor >= min_step and span / (step / divisor) <= max_bins:
+            step /= divisor
+    precision = 0 if step >= 1 else int(-math.log10(step)) + 1
+    step = round(step, precision)
+    start = math.floor(lo / step + 10.0 ** (-precision - 1)) * step
+    if lo < start:
+        start -= step
+    stop = math.ceil(hi / step) * step
+    if stop <= start:
+        stop = start + step
+    return round(start, precision), round(stop, precision), step, precision
+
+
+def _format_edge(value: float, precision: int) -> str:
+    return f"{value:.{precision}f}" if abs(value) < 1e15 else f"{value:.6g}"
+
+
+def _histogram(s: pl.Series, max_bins: int) -> dict:
+    """Bin a numeric Series in Polars; return one entry per bin.
+
+    Nulls, NaN and infinite values are left out. Bins follow Vega-Lite's
+    ``maxbins`` rule (what the Altair backend always used). Integer columns get
+    whole-number bins centred on the integers, as Plotly does for integer data,
+    and the largest value gets its own bin instead of sharing the last one.
+    """
+    is_integer = s.dtype.is_integer()
+    # Some Series methods run as pl.col(<series name>) expressions, so a name
+    # like "^a.*$" would be read as a regex: use a fixed name.
+    values = s.rename("value").cast(pl.Float64)
+    values = values.filter(values.is_finite())
+    if values.len() == 0:
+        return {"start": [], "end": [], "center": [], "count": [], "label": [], "step": 1.0}
+
+    lo, hi = values.min(), values.max()
+    start, stop, step, precision = _nice_bins(
+        lo, hi + 1 if is_integer else hi, max_bins, 1.0 if is_integer else 0.0
+    )
+    n_bins = max(1, round(stop / step - start / step))
+    index = (
+        ((values - start) / step + 1e-14).floor().clip(0, n_bins - 1).cast(pl.Int64)
+    )
+    counts = [0] * n_bins
+    for bin_index, count in index.to_frame("bin").group_by("bin").len().iter_rows():
+        counts[bin_index] = count
+
+    # "+ 0.0" turns a rounded -0.0 into 0.0.
+    edges = [round(start + i * step, precision) + 0.0 for i in range(n_bins + 1)]
+    if is_integer:
+        # [a, b) holds the integers a .. b - 1; draw it from a - 0.5 to b - 0.5.
+        labels = [
+            f"{int(a)}" if step == 1 else f"{int(a)} to {int(b) - 1}"
+            for a, b in zip(edges, edges[1:])
+        ]
+        edges = [edge - 0.5 for edge in edges]
+    else:
+        decimals = max(0, -math.floor(math.log10(step) + 1e-9))
+        labels = [
+            f"[{_format_edge(a, decimals)}, {_format_edge(b, decimals)})"
+            for a, b in zip(edges, edges[1:])
+        ]
+    return {
+        "start": edges[:-1],
+        "end": edges[1:],
+        "center": [round((a + b) / 2, precision + 1) for a, b in zip(edges, edges[1:])],
+        "count": counts,
+        "label": labels,
+        "step": step,
+    }
+
+
 # ---------- Plotly backends ----------
 
-def _dist_plot_plotly(s: pl.Series, column: str, bins: int, width, height):
+def _dist_plot_plotly(hist: dict, column: str, width, height):
     import plotly.graph_objects as go
-    fig = go.Figure(data=[go.Histogram(x=s.to_list(), nbinsx=bins)])
+    fig = go.Figure(data=[go.Bar(
+        x=hist["center"], y=hist["count"], width=hist["step"], customdata=hist["label"],
+        hovertemplate="%{customdata}<br>Count: %{y}<extra></extra>",
+    )])
     fig.update_layout(title=f"Distribution: {column}", xaxis_title=column, yaxis_title="Count",
-                      width=width, height=height)
+                      bargap=0, width=width, height=height)
     return fig
 
 def _missingval_plot_plotly(cols: List[str], ratios: List[float], counts: List[int], width, height, normalize: bool = False):
@@ -171,7 +334,9 @@ def _cat_plot_plotly(cat_data: dict, width, height):
     fig = make_subplots(
         rows=1, cols=n_cols,
         subplot_titles=list(cat_data.keys()),
-        horizontal_spacing=0.1
+        # 0.1 of the width per gap, but never more than 30% in total: Plotly
+        # rejects spacings above 1 / (cols - 1), i.e. from 12 columns on.
+        horizontal_spacing=min(0.1, 0.3 / max(n_cols - 1, 1))
     )
     
     for i, (col_name, data) in enumerate(cat_data.items(), 1):
@@ -315,7 +480,7 @@ def _corr_heatmap_altair_enhanced(row_labels: list, col_labels: list, mat: List[
     if not data:
         return _empty_plot("No correlations to display", "altair", width or 400, height or 300)
     
-    df_data = pl.DataFrame(data)
+    df_data = _altair_data(data)
     
     # Create base heatmap
     base = alt.Chart(df_data).mark_rect().encode(
@@ -324,7 +489,7 @@ def _corr_heatmap_altair_enhanced(row_labels: list, col_labels: list, mat: List[
         color=alt.Color('correlation:Q', 
                        scale=alt.Scale(scheme='redblue', domain=[-1, 1]),
                        legend=alt.Legend(title=f'{method.title()} Correlation')),
-        tooltip=['row', 'col', 'correlation']
+        tooltip=['row:N', 'col:N', 'correlation:Q']
     )
     
     # Set title
@@ -350,13 +515,22 @@ def _corr_heatmap_altair_enhanced(row_labels: list, col_labels: list, mat: List[
     
     return base
 
-def _dist_plot_altair(s: pl.Series, column: str, bins: int, width, height):
+def _dist_plot_altair(hist: dict, column: str, width, height):
     alt = _require_altair()
-    df_data = pl.DataFrame({column: s})
-    chart = alt.Chart(df_data).mark_bar().encode(
-        x=alt.X(f"{column}:Q", bin=alt.Bin(maxbins=bins)),
-        y="count()",
-        tooltip=[column]
+    rows = [
+        {"bin_start": a, "bin_end": b, "count": n, "bin": label}
+        for a, b, n, label in zip(hist["start"], hist["end"], hist["count"], hist["label"])
+    ]
+    # Fixed field names: the user's column name is only ever a title, so
+    # Vega-Lite never parses it as a field (":" types, "." / "[]" nesting).
+    chart = alt.Chart(_altair_data(rows)).mark_bar().encode(
+        x=alt.X(field="bin_start", type="quantitative", bin="binned", title=column),
+        x2=alt.X2(field="bin_end"),
+        y=alt.Y(field="count", type="quantitative", title="Count"),
+        tooltip=[
+            alt.Tooltip(field="bin", type="nominal", title=column),
+            alt.Tooltip(field="count", type="quantitative", title="Count"),
+        ],
     ).properties(title=f"Distribution: {column}")
     return _apply_chart_size(chart, width, height)
 
@@ -371,11 +545,11 @@ def _missingval_plot_altair(cols: List[str], ratios: List[float], counts: List[i
         x_title = "Number of missing values"
         text_values = [str(c) for c in counts]
     data = [{"column": c, "ratio": r, "count": n, "text_value": t} for c, r, n, t in zip(cols, ratios, counts, text_values)]
-    df_data = pl.DataFrame(data)
+    df_data = _altair_data(data)
     base = alt.Chart(df_data).mark_bar().encode(
         y=alt.Y("column:N", sort=None, title="Columns"),
         x=alt.X(f"{x_field}:Q", title=x_title),
-        tooltip=["column", "count", "ratio"]
+        tooltip=["column:N", "count:Q", "ratio:Q"]
     ).properties(title="Missing values per column")
     base = _apply_chart_size(base, width, height)
     text = alt.Chart(df_data).mark_text(align="left", baseline="middle", dx=3).encode(
@@ -410,7 +584,7 @@ def _cat_plot_altair(cat_data: dict, width, height):
     if not all_data:
         return _empty_plot("No categorical values to display", "altair", width, height)
     
-    df_data = pl.DataFrame(all_data)
+    df_data = _altair_data(all_data)
     
     chart = alt.Chart(df_data).mark_bar().encode(
         x=alt.X('value:N', title='Categories'),
@@ -419,7 +593,7 @@ def _cat_plot_altair(cat_data: dict, width, height):
                        scale=alt.Scale(domain=['top', 'bottom'], 
                                      range=['steelblue', 'indianred']),
                        legend=alt.Legend(title="Category Type")),
-        tooltip=['column', 'value', 'count', 'type'],
+        tooltip=['column:N', 'value:N', 'count:Q', 'type:N'],
         facet=alt.Facet('column:N', title='Categorical Variables')
     ).properties(
         title="Categorical Value Frequencies"
@@ -443,7 +617,7 @@ def _corr_plot_altair(columns: list[str], corr_matrix: list, method: str, width,
                 "correlation": corr_matrix[i][j]
             })
     
-    df_data = pl.DataFrame(data)
+    df_data = _altair_data(data)
     
     chart = alt.Chart(df_data).mark_rect().encode(
         x=alt.X('col:N', title='Variables'),
@@ -451,7 +625,7 @@ def _corr_plot_altair(columns: list[str], corr_matrix: list, method: str, width,
         color=alt.Color('correlation:Q', 
                        scale=alt.Scale(scheme='redblue', domain=[-1, 1]),
                        legend=alt.Legend(title=f'{method.title()} Correlation')),
-        tooltip=['row', 'col', 'correlation']
+        tooltip=['row:N', 'col:N', 'correlation:Q']
     ).properties(
         title=f"{method.title()} Correlation Matrix"
     )
@@ -466,7 +640,7 @@ def corr_heatmap(
     columns: Sequence[str] | None = None,
     *,
     split: str | None = None,
-    threshold: float = 0.0,
+    threshold: float | None = None,
     target: str | None = None,
     method: str = "pearson",
     annotate: bool = True,
@@ -493,11 +667,12 @@ def corr_heatmap(
         - "neg": Show only negative correlations below -threshold  
         - "high": Show correlations where abs(correlation) > threshold
         - "low": Show correlations where abs(correlation) < threshold
-    threshold : float, default 0.0
+    threshold : float | None, default None
         Correlation threshold value between 0 and 1. Used with split parameter:
         - For "pos"/"neg": minimum absolute correlation to display
         - For "high"/"low": threshold for filtering correlations
-        - Default becomes 0.3 when split is "high" or "low"
+        - If None: 0.3 when split is "high" or "low", otherwise 0.0. An
+          explicit value, including 0.0, is always used as given.
     target : str | None, optional
         Target column for correlation analysis. When specified, shows correlations 
         between each feature column and the target column only.
@@ -523,6 +698,8 @@ def corr_heatmap(
         Chain backend methods onto it to customize further - see the module
         docstring.
     """
+    require_dataframe(df, "corr_heatmap")
+
     # Validate parameters
     if method not in ["pearson", "spearman"]:
         raise ValueError("method must be 'pearson' or 'spearman'")
@@ -530,14 +707,14 @@ def corr_heatmap(
     if split and split not in ["pos", "neg", "high", "low"]:
         raise ValueError("split must be None, 'pos', 'neg', 'high', or 'low'")
     
-    if not 0 <= threshold <= 1:
+    if threshold is not None and not 0 <= threshold <= 1:
         raise ValueError("threshold must be between 0 and 1")
     
     _validate_backend(backend)
     
-    # Set default threshold for high/low splits
-    if split in ["high", "low"] and threshold == 0.0:
-        threshold = 0.3
+    # Default threshold: 0.3 for high/low splits, 0.0 otherwise
+    if threshold is None:
+        threshold = 0.3 if split in ["high", "low"] else 0.0
     
     # Get numeric columns
     if target:
@@ -545,7 +722,7 @@ def corr_heatmap(
         if target not in df.columns:
             raise ValueError(f"Target column '{target}' not found in DataFrame")
         
-        target_dtype = df.select(pl.col(target)).dtypes[0]
+        target_dtype = df.schema[target]
         if not target_dtype.is_numeric():
             raise ValueError(f"Target column '{target}' must be numeric, got {target_dtype}")
         
@@ -560,15 +737,11 @@ def corr_heatmap(
         if len(cols) == 0:
             raise ValueError("No numeric columns available for target correlation")
         
-        correlation_row = df.select(
-            [
-                pl.corr(target, col, method=method).alias(col)
-                for col in cols
-            ]
-        ).row(0, named=True)
         correlations = [
-            correlation_row[col] if correlation_row[col] is not None else 0.0
-            for col in cols
+            value if value is not None else 0.0
+            for value in _pairwise_correlations(
+                df, [(target, col) for col in cols], method
+            )
         ]
         
         # Create target correlation matrix (1 row)
@@ -641,7 +814,12 @@ def dist_plot(
     column : str | None, optional
         Name of the numeric column to plot. If None, uses the first numeric column.
     bins : int, default 30
-        Number of histogram bins to use.
+        Maximum number of histogram bins. The bin width is rounded to a "nice"
+        value (1, 2 or 5 times a power of ten; whole numbers for integer
+        columns), so the plot may show fewer bins. The data are binned in
+        Polars and only the per-bin counts go into the figure, so its size
+        does not grow with the number of rows. Nulls, NaN and infinite values
+        are left out.
     width : int | None, optional
         Width of the plot in pixels. If None, uses backend default.
     height : int | None, optional
@@ -656,7 +834,10 @@ def dist_plot(
         Chain backend methods onto it to customize further - see the module
         docstring.
     """
+    require_dataframe(df, "dist_plot")
     _validate_backend(backend)
+    if bins < 1:
+        raise ValueError("bins must be at least 1")
 
     cols = _numeric_columns(df)
     if column is None:
@@ -669,12 +850,13 @@ def dist_plot(
         if not df[column].dtype.is_numeric():
             return _empty_plot(f"Column '{column}' is not numeric", backend, width, height)
 
-    s = df.select(pl.col(column).drop_nulls()).to_series()
+    # get_column takes the name literally, unlike pl.col("*") or pl.col("^a.*$").
+    hist = _histogram(df.get_column(column), bins)
 
     if backend == "plotly":
-        return _dist_plot_plotly(s, column, bins, width, height)
+        return _dist_plot_plotly(hist, column, width, height)
     elif backend == "altair":
-        return _dist_plot_altair(s, column, bins, width, height)
+        return _dist_plot_altair(hist, column, width, height)
     else:
         raise ValueError(_BACKEND_ERROR)
 
@@ -714,6 +896,7 @@ def missingval_plot(
         ``ps.missingval_plot(df).update_layout(template="plotly_dark")`` -
         see the module docstring.
     """
+    require_dataframe(df, "missingval_plot")
     cols = list(df.columns)
     if sort not in {"desc", "asc", "none"}:
         raise ValueError("sort must be 'desc', 'asc', or 'none'")
@@ -723,16 +906,17 @@ def missingval_plot(
     if not cols:
         return _empty_plot("No columns", backend, width, height)
 
+    work, _ = _literal_columns(df)
     missing_expressions = []
-    for column, dtype in df.schema.items():
+    for column, dtype in work.schema.items():
         missing = pl.col(column).is_null()
         if dtype.is_float():
             missing = missing | pl.col(column).is_nan()
         missing_expressions.append(missing.sum().alias(column))
 
-    null_counts_row = df.select(missing_expressions)
+    null_counts_row = work.select(missing_expressions)
     total = df.height
-    counts = [int(null_counts_row.select(pl.col(c)).item()) for c in cols]
+    counts = [int(count) for count in null_counts_row.row(0)]
     ratios = [cnt / max(total, 1) for cnt in counts]
 
     order = list(range(len(cols)))
@@ -787,6 +971,7 @@ def cat_plot(
         Chain backend methods onto it to customize further - see the module
         docstring.
     """
+    require_dataframe(df, "cat_plot")
     if top < 0 or bottom < 0:
         raise ValueError("top and bottom must be non-negative")
 
@@ -803,33 +988,36 @@ def cat_plot(
         return _empty_plot("No categorical columns found", backend, width, height)
     
     # Calculate value counts for each categorical column
+    work, mapping = _literal_columns(df)
     cat_data = {}
     for col in cat_cols:
-        value_counts = (df.select(pl.col(col).value_counts(sort=True))
-                       .unnest(col)
-                      )
+        # Own aliases: value_counts() calls its count field "count", which
+        # collides with a column of that name. Ties are ordered by value so
+        # the plot is the same on every run.
+        value_counts = (
+            work.select(pl.col(mapping.get(col, col)).alias("value"))
+            .group_by("value")
+            .agg(pl.len().alias("count"))
+            .sort(
+                [pl.col("count"), pl.col("value").cast(pl.String)],
+                descending=[True, False],
+                nulls_last=True,
+            )
+        )
 
-        counts = value_counts.get_column("count").to_list()
-        values = value_counts.get_column(col).to_list()
-
-        top_values = values[:top] if top > 0 else []
-        top_counts = counts[:top] if top > 0 else []
-
+        # Slice in Polars; only the plotted values become Python lists. The
+        # bottom block starts after the top block, so no value appears twice.
+        top_part = value_counts.head(top)
         if bottom > 0:
-            bottom_pairs = list(zip(values[-bottom:], counts[-bottom:]))
-            top_value_keys = {repr(v) for v in top_values}
-            bottom_pairs = [(v, c) for v, c in bottom_pairs if repr(v) not in top_value_keys]
-            bottom_values = [v for v, _ in bottom_pairs]
-            bottom_counts = [c for _, c in bottom_pairs]
+            bottom_part = value_counts.slice(max(top, value_counts.height - bottom))
         else:
-            bottom_values = []
-            bottom_counts = []
-            
+            bottom_part = value_counts.clear()
+
         cat_data[col] = {
-            'top_values': top_values,
-            'top_counts': top_counts,
-            'bottom_values': bottom_values,
-            'bottom_counts': bottom_counts
+            'top_values': top_part.get_column("value").to_list(),
+            'top_counts': top_part.get_column("count").to_list(),
+            'bottom_values': bottom_part.get_column("value").to_list(),
+            'bottom_counts': bottom_part.get_column("count").to_list()
         }
     
     if backend == "plotly":
@@ -883,6 +1071,7 @@ def corr_plot(
         Chain backend methods onto it to customize further - see the module
         docstring.
     """
+    require_dataframe(df, "corr_plot")
     _validate_backend(backend)
 
     # Get numeric columns

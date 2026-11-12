@@ -39,6 +39,9 @@ Polarscope is a basic data analysis library for Polars DataFrames. It provides a
 - Optional expanded output (`expanded=True`) with normality/uniformity tests, outlier metrics and modelling usability flags.
 - Optional compact mode (`compact=True`) that shortens big numbers to K (thousands) and M (millions) and decimal precision (`decimals=int`)
 - Great Tables output by default or plain Polars DataFrame output (`great_tables=False`).
+- Safe on large data: a built-in memory guard checks the memory free on the machine (or container) before the full summary and streams instead when it would not fit - it cannot be switched off.
+- Identifier columns (`ORDER_ID`, `customerId`, `kundenummer`, ...) are recognized by name and only counted, not summarized.
+- Works on LazyFrames without collecting them: `ps.xray(pl.scan_parquet("big.parquet"))` summarizes by streaming, with memory that stays flat however large the data is; `exact=True` gives the full summary, read one column at a time.
 
 Quickly compute the correlation (Spearman or Pearson) to a target column:
 
@@ -47,7 +50,7 @@ Quickly compute the correlation (Spearman or Pearson) to a target column:
 ### 🧹 Cleaning & Optimization (`fix`)
 - `ps.fix(df)` cleans and optimizes in one call: column renaming (`case="snake"/"camel"/"pascal"/"kebab"/"upper"/"lower"`), whitespace stripping (empty strings → null), dtype shrinking, and empty-column removal — with a compact report of what changed.
 - Opt-in extras: `drop_duplicate_rows`, `missing_threshold`, `drop_constant_columns`, `outliers="iqr"/"zscore"`.
-- Lossless by default: anything that removes or alters data must be switched on explicitly.
+- Lossless by default: anything that removes or alters data must be switched on explicitly. Dtype shrinking never changes a value: Float64 becomes Float32 only when every value survives exactly, and integers shrink no further than Int32 (`min_int_bits=32`), because Polars integer arithmetic wraps on overflow and narrower types overflow sooner in later calculations.
 - Building blocks also available standalone: `clean_column_names`, `convert_datatypes`, `drop_missing`.
 
 ### 📈 Plots
@@ -204,10 +207,14 @@ Customizing an Altair chart object using method chaining:
 pip install polarscope
 ```
 
+Requires Python 3.9+ and Polars 1.34+ (the first release that streams query
+results back in batches, which keeps `xray()`'s memory bounded on large
+LazyFrames).
+
 Optional extras:
 
 ```bash
-pip install "polarscope[altair]"   # optional Altair plotting backend
+pip install "polarscope[altair]"   # optional Altair plotting backend (Altair 5.4+, no pandas)
 pip install "polarscope[plotly]"   # Kaleido support for static Plotly images
 pip install "polarscope[scipy]"    # statistical tests
 pip install "polarscope[all]"      # all optional features
@@ -257,6 +264,77 @@ ps.xray(
     great_tables=False            # return Polars DataFrame
 )
 ```
+
+### Large Data: X-ray a LazyFrame
+
+`xray()` accepts a `LazyFrame` and never collects it. By default a LazyFrame
+is summarized by **streaming**: one pass over the analyzed columns plus a small
+group-by per column, so no column is ever held in memory and memory stays flat
+however many rows there are - the way to summarize a file larger than memory.
+
+```python
+lf = pl.scan_parquet("big.parquet")   # or scan_ipc, or any lazy query
+
+ps.xray(lf)                     # streaming statistics, numeric columns only
+ps.xray(lf, include="all", expanded=True, corr_target="price")
+ps.xray(lf, exact=True)         # the full DataFrame summary, one column at a time
+```
+
+The streaming summary shows count, nulls/NaN, % missing, mean, std, min, max,
+skew, kurtosis, zero/positive/negative shares, a histogram, outliers, Pearson
+correlation, string lengths and earliest/latest; expanded mode adds the distinct
+count (exact up to a million distinct values, estimated within about 0.1%
+above), `opt_dtype`, quality flags and the statistical tests (on a systematic
+sample of about 3,000 rows). String columns with up to 100,000 distinct values
+also get their top values. Every value shown equals the one a DataFrame gets.
+What it leaves out needs all of a column's values at once:
+
+| Not in the streaming summary | Instead |
+|---|---|
+| 25% / 50% / 75%, IQR, MAD | `exact=True` |
+| IQR outliers | outliers use the z-score rule (beyond mean ± 3 std) |
+| duplicate counts | the distinct count |
+| Spearman correlation, custom `percentiles` | `exact=True` |
+
+With `exact=True` a LazyFrame gets results identical to a DataFrame. It is read
+in batches of at most 10 million cells (rows × columns), one column at a time
+when a column alone is larger; each batch is summarized and released before
+the next is read. The frame need not fit in memory, but sorting a column copies
+it, so this needs several times the largest column's size.
+
+Measured with `include="all"` on a 12-column Parquet dataset (integers, two
+Decimal price columns, floats with NaN, a Boolean, two strings, a date and a
+timestamp), on a 4-core machine with 15 GB of RAM, each run in a fresh process:
+
+| Rows | `xray(pl.read_parquet(...))` | `xray(lf, exact=True)` | `xray(lf)` (streaming) | streaming, `expanded=True` |
+|---|---|---|---|---|
+| 20 million | 9.3 s, 3.45 GB | 9.2 s, 1.48 GB | **5.0 s, 0.37 GB** | 9.5 s, 0.49 GB |
+| 100 million | - | - | **18.6 s, 0.74 GB** | 37.9 s, 1.00 GB |
+| 200 million (about 19 GB in memory) | stopped at 12 GB | stopped at 12 GB | **35.5 s, 0.89 GB** | 72.0 s, 1.25 GB |
+
+Streaming memory stays around 1 GB from 100 to 200 million rows; most of it is
+Polars' Parquet read-ahead (several files at once).
+
+### Memory guard
+
+`xray()` never computes a summary that would not fit. Before a full summary (a
+DataFrame, or a LazyFrame with `exact=True`) it estimates the memory needed from
+the columns' sizes and compares it with the memory free right now: the
+operating system's available memory, capped by any container (cgroup) limit.
+If the summary needs more than half of it, `xray()` summarizes by streaming
+instead and says so in a warning and under the table. If the call explicitly
+asked for something only the full summary gives (IQR or percentile outliers,
+custom `percentiles`, Spearman correlation), it raises `MemoryError` with the
+numbers instead. There is no option to switch the guard off.
+
+Either way, every query re-evaluates the lazy plan. That is cheap for
+`scan_parquet` and `scan_ipc`, which read only the columns a query needs, but
+slow for `scan_csv` (every query parses the whole file) or a plan with
+expensive steps such as joins, and a plan that samples or shuffles rows without
+a fixed seed gives each query different rows. Collect those first, or write
+them to Parquet with `sink_parquet()` and scan that. The subtitle reads
+"LazyFrame" where a DataFrame shows its in-memory size, since a LazyFrame has
+no size until collected.
 
 ### Customizing Beyond the Built-in Options
 

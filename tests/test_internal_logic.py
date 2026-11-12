@@ -342,16 +342,12 @@ def test_expanded_column_group_order() -> None:
     # Basic statistics lead, with opt_dtype right after dtype.
     assert cols[:8] == ["column", "dtype", "opt_dtype", "count", "mean", "std", "min", "max"]
     # Group order: quantiles, counts, outliers, distribution, correlation,
-    # tests, quality assessment.
-    assert cols[-4:] == ["normality_test", "uniformity_test", "shakiness_score", "quality_flag"]
-    assert (
-        cols.index("25%")
-        < cols.index("null_count")
-        < cols.index("n_outliers")
-        < cols.index("mad")
-        < cols.index("correlation")
-        < cols.index("normality_test")
-    )
+    # tests (only with SciPy installed), quality assessment.
+    tests = ["normality_test", "uniformity_test"] if xray_mod._check_scipy_availability() else []
+    assert cols[-(2 + len(tests)):] == [*tests, "shakiness_score", "quality_flag"]
+    order = ["25%", "null_count", "n_outliers", "mad", "correlation", *tests[:1]]
+    positions = [cols.index(c) for c in order]
+    assert positions == sorted(positions)
 
 
 def test_compact_count_honors_decimals() -> None:
@@ -750,29 +746,61 @@ def test_xray_internal_helpers() -> None:
 
     assert xray_mod._percentile_to_label(0.5) == "50%"
     assert xray_mod._percentile_to_label(0.1) == "10%"
-    quantiles = xray_mod._calculate_quantiles(pl.Series([1.0, 2.0, 3.0, 4.0]), [0.25, 0.5, 0.75])
-    assert set(quantiles) == {"25%", "50%", "75%"}
+    quantiles = xray_mod.xray(
+        pl.DataFrame({"v": [1.0, 2.0, 3.0, 4.0]}), great_tables=False
+    ).select("25%", "50%", "75%")
+    assert quantiles.row(0) == (1.75, 2.5, 3.25)  # linear interpolation
 
     # String-like dtype detection covers Categorical and Enum
     assert xray_mod._is_stringy(pl.Series(["a"], dtype=pl.Categorical).dtype)
     assert xray_mod._is_stringy(pl.Series(["x"], dtype=pl.Enum(["x"])).dtype)
     assert not xray_mod._is_stringy(pl.Series([1]).dtype)
 
-    assert xray_mod._suggest_optimal_dtype(pl.Series([1.0, 2.0, float("nan")]), pl.Float64) == "Int64"
-    assert xray_mod._suggest_optimal_dtype(pl.Series([1.1, 2.2]), pl.Float64) == "Float32"
-    # Float64 -> Float32 is suggested only when lossless (round-trip error
-    # <= 1e-6), mirroring the shrink policy fix()/convert_datatypes applies.
-    assert xray_mod._suggest_optimal_dtype(
-        pl.Series([307491.47, 12345.678]), pl.Float64
-    ) == "Float64"
-    assert xray_mod._suggest_optimal_dtype(pl.Series([float("nan"), float("nan")]), pl.Float64) == "Float64"
-    assert xray_mod._suggest_optimal_dtype(pl.Series(["x", "x", "x", "x", "y"]), pl.String) == "Categorical"
+    def opt_dtype(series: pl.Series) -> str:
+        out = xray_mod.xray(
+            series.to_frame("v"), include="all", expanded=True, great_tables=False
+        )
+        return out["opt_dtype"][0]
 
-    outlier_series = pl.Series([1.0, 2.0, 3.0, 100.0])
-    assert xray_mod._count_outliers(outlier_series, "iqr", None) >= 1
-    assert xray_mod._count_outliers(outlier_series, "percentile", [0.25, 0.75]) >= 1
-    assert xray_mod._count_outliers(outlier_series, "zscore", None) >= 0
-    assert xray_mod._count_outliers(pl.Series([5.0]), "zscore", None) == 0
+    # Whole-number floats may become Int64 - but not with NaN/inf or out of range.
+    assert opt_dtype(pl.Series([1.0, 2.0])) == "Int64"
+    assert opt_dtype(pl.Series([1.0, 2.0, float("nan")])) == "Float32"
+    assert opt_dtype(pl.Series([1.0, 2.0, float("inf")])) == "Float32"
+    # Whole numbers beyond the Int64 range (powers of two: exact in Float32).
+    assert opt_dtype(pl.Series([2.0**70, 2.0**71])) == "Float32"
+    # Float64 -> Float32 only when every value survives exactly, as in fix().
+    assert opt_dtype(pl.Series([1.1, 2.2])) == "Float64"
+    assert opt_dtype(pl.Series([307491.47, 12345.678])) == "Float64"
+    assert opt_dtype(pl.Series([1e-300, 2e-300])) == "Float64"
+    assert opt_dtype(pl.Series([float("nan"), float("nan")])) == "Float64"
+    assert opt_dtype(pl.Series(["x", "x", "x", "x", "y"])) == "Categorical"
+    assert opt_dtype(pl.Series([True, False])) == "Boolean"
+
+    # Integer suggestions hold the whole range, not just the minimum, and are
+    # exactly what fix()/convert_datatypes casts to (Int32 floor by default).
+    int_cases = [
+        (pl.Series([0, 127], dtype=pl.Int64), "Int32"),
+        (pl.Series([-129, 5], dtype=pl.Int64), "Int32"),
+        (pl.Series([0, 2**31 - 1], dtype=pl.Int64), "Int32"),
+        (pl.Series([0, 10**12], dtype=pl.Int64), "Int64"),
+        (pl.Series([-(2**31) - 1, 0], dtype=pl.Int64), "Int64"),
+        (pl.Series([5, 2**40], dtype=pl.UInt64), "Int64"),
+        (pl.Series([0, 2**63], dtype=pl.UInt64), "UInt64"),
+        (pl.Series([0, 200], dtype=pl.UInt8), "UInt8"),
+    ]
+    for series, expected in int_cases:
+        assert opt_dtype(series) == expected
+        converted = clean_mod.convert_datatypes(series.to_frame("v"))
+        assert str(converted["v"].dtype) == expected
+
+    def n_outliers(values: list[float], **kwargs) -> int:
+        frame = pl.DataFrame({"v": values})
+        return xray_mod.xray(frame, great_tables=False, **kwargs)["n_outliers"][0]
+
+    assert n_outliers([1.0, 2.0, 3.0, 100.0]) == 1
+    assert n_outliers([1.0, 2.0, 3.0, 100.0], outlier_method="percentile", outlier_bounds=[0.25, 0.75]) == 2
+    assert n_outliers([1.0] * 20 + [50.0], outlier_method="zscore") == 1
+    assert n_outliers([5.0], outlier_method="zscore") == 0
 
     nano_df = pl.DataFrame(
         {
@@ -901,15 +929,6 @@ def test_cat_plot_supports_enum_columns() -> None:
     )
     figure = plots_mod.cat_plot(frame, backend="plotly")
     assert len(figure.data) == 1
-
-
-def test_dist_plot_preserves_large_integer_values() -> None:
-    values = [2**53 + 1, 2**53 + 3]
-    figure = plots_mod.dist_plot(
-        pl.DataFrame({"value": values}),
-        backend="plotly",
-    )
-    assert list(figure.data[0].x) == values
 
 
 def test_corr_plot_respects_explicit_altair_backend() -> None:

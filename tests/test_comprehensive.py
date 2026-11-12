@@ -3,6 +3,8 @@ Comprehensive test suite for polarscope library.
 Tests all functions with various argument combinations to ensure they run without errors.
 """
 
+import re
+
 import pytest
 import polars as pl
 import numpy as np
@@ -12,8 +14,31 @@ import importlib
 from polarscope.datasets import _get_data_path
 from polarscope.xray import _calculate_shakiness_score
 
-# Suppress warnings for cleaner test output
-warnings.filterwarnings("ignore")
+
+# A nanoplot <svg> (Great Tables 1.x adds a class attribute before role).
+_NANOPLOT_SVG = re.compile(r'<svg\b[^>]*\brole="img"')
+
+
+def _render(result):
+    """Render a result the way a notebook would, so rendering failures fail.
+
+    Great Tables objects are rendered to HTML, plotly figures to JSON,
+    Altair charts to a Vega-Lite dict, and DataFrames must not be empty.
+    """
+    assert result is not None
+    if isinstance(result, pl.DataFrame):
+        assert result.height > 0
+        return result
+    module = type(result).__module__
+    if hasattr(result, "as_raw_html"):
+        html = result.as_raw_html()
+        assert "<table" in html
+        return html
+    if module.startswith("plotly"):
+        return result.to_json()
+    if module.startswith("altair"):
+        return result.to_dict()
+    raise AssertionError(f"unexpected result type {type(result)!r}")
 
 
 def _module_available(module_name: str) -> bool:
@@ -107,7 +132,7 @@ class TestXrayFunction:
         
         # Basic call
         result = ps.xray(df)
-        assert result is not None
+        _render(result)
         
         # DataFrame output
         result_df = ps.xray(df, great_tables=False)
@@ -119,17 +144,17 @@ class TestXrayFunction:
         df = TestDataGenerator.create_mixed_df(50)
         
         result = ps.xray(df, expanded=True)
-        assert result is not None
+        _render(result)
         
         # With all statistical tests
         result = ps.xray(df, expanded=True, normality_test="anderson")
-        assert result is not None
+        _render(result)
         
         result = ps.xray(df, expanded=True, normality_test="ks")
-        assert result is not None
+        _render(result)
         
         result = ps.xray(df, expanded=True, uniformity_test="chi2")
-        assert result is not None
+        _render(result)
     
     def test_xray_custom_percentiles(self):
         """Test xray with custom percentiles."""
@@ -137,15 +162,15 @@ class TestXrayFunction:
         
         # Custom percentiles
         result = ps.xray(df, percentiles=[0.1, 0.25, 0.5, 0.75, 0.9])
-        assert result is not None
+        _render(result)
         
         # Single percentile
         result = ps.xray(df, percentiles=[0.5])
-        assert result is not None
+        _render(result)
         
         # Many percentiles
         result = ps.xray(df, percentiles=[0.05, 0.1, 0.25, 0.5, 0.75, 0.9, 0.95])
-        assert result is not None
+        _render(result)
 
     def test_xray_percentile_validation_and_sorting(self):
         """Percentiles should be sorted and validated."""
@@ -181,11 +206,11 @@ class TestXrayFunction:
         
         # IQR method (default)
         result = ps.xray(df, outlier_method="iqr")
-        assert result is not None
+        _render(result)
         
         # Percentile method
         result = ps.xray(df, outlier_method="percentile", outlier_bounds=[0.05, 0.95])
-        assert result is not None
+        _render(result)
 
         for invalid_bounds in ([0.95, 0.05], [-0.1, 0.9], [0.1, 1.1]):
             with pytest.raises(ValueError):
@@ -197,7 +222,7 @@ class TestXrayFunction:
         
         # Z-score method
         result = ps.xray(df, outlier_method="zscore")
-        assert result is not None
+        _render(result)
     
     def test_xray_correlation_target(self):
         """Test xray with correlation target."""
@@ -206,10 +231,10 @@ class TestXrayFunction:
         # Test each numeric column as target
         for col in ['price', 'volume', 'rating', 'score']:
             result = ps.xray(df, corr_target=col)
-            assert result is not None
+            _render(result)
             
             result = ps.xray(df, corr_target=col, expanded=True)
-            assert result is not None
+            _render(result)
 
     def test_xray_correlation_plot_renders(self):
         df = pl.DataFrame({"x": [1.0, 2.0, 3.0], "y": [2.0, 4.0, 6.0]})
@@ -218,7 +243,7 @@ class TestXrayFunction:
 
         assert 'id="correlation_plot"' in rendered
         # One histogram nanoplot per analyzed column...
-        assert rendered.count('<svg role="img"') == 2
+        assert len(_NANOPLOT_SVG.findall(rendered)) == 2
         # ...plus a fixed-scale correlation bar for the one non-target column.
         assert rendered.count('class="ps-corr-track"') == 1
     
@@ -229,23 +254,23 @@ class TestXrayFunction:
         # Test decimals
         for decimals in [1, 2, 3, 4]:
             result = ps.xray(df, decimals=decimals)
-            assert result is not None
+            _render(result)
         
         # Test compact mode
         result = ps.xray(df, compact=True)
-        assert result is not None
+        _render(result)
         
         # Test different separators
         result = ps.xray(df, sep_mark=" ", dec_mark=",")
-        assert result is not None
+        _render(result)
         
         # Test pattern
         result = ps.xray(df, pattern="[{x}]")
-        assert result is not None
+        _render(result)
         
         # Test compact with custom separators
         result = ps.xray(df, compact=True, sep_mark=" ", dec_mark=",")
-        assert result is not None
+        _render(result)
 
     def test_xray_decimals_applies_to_both_output_modes(self):
         df = pl.DataFrame({"value": [1.123456, 2.123456]})
@@ -259,7 +284,7 @@ class TestXrayFunction:
 
         rendered = ps.xray(df, decimals=5).as_raw_html()
         assert "1.62346" in rendered
-        assert '<svg role="img"' in rendered
+        assert _NANOPLOT_SVG.search(rendered)
 
         with pytest.raises(ValueError, match="non-negative integer"):
             ps.xray(df, decimals=-1)
@@ -278,7 +303,7 @@ class TestXrayFunction:
             outlier_threshold=0.01,
             shakiness_threshold=1
         )
-        assert result is not None
+        _render(result)
 
         # Lenient thresholds
         result = ps.xray(
@@ -290,7 +315,7 @@ class TestXrayFunction:
             outlier_threshold=0.2,
             shakiness_threshold=5
         )
-        assert result is not None
+        _render(result)
 
     def test_xray_non_numeric_std_key_and_value(self):
         """Non-numeric columns should expose lowercase 'std' key with None values."""
@@ -375,31 +400,31 @@ class TestPlottingFunctions:
             if backend == "altair" and not _module_available("altair"):
                 continue
             result = ps.corr_heatmap(df, backend=backend)
-            assert result is not None
+            _render(result)
             
             # With annotations off
             result = ps.corr_heatmap(df, backend=backend, annotate=False)
-            assert result is not None
+            _render(result)
             
             # With custom dimensions
             result = ps.corr_heatmap(df, backend=backend, width=600, height=500)
-            assert result is not None
+            _render(result)
         
         # Test correlation methods
         for method in ["pearson", "spearman"]:
             result = ps.corr_heatmap(df, method=method)
-            assert result is not None
+            _render(result)
         
         # Test with target column
         result = ps.corr_heatmap(df, target="price")
-        assert result is not None
+        _render(result)
         
         # Test with threshold and split
         result = ps.corr_heatmap(df, threshold=0.3, split="pos")
-        assert result is not None
+        _render(result)
         
         result = ps.corr_heatmap(df, threshold=0.3, split="neg")
-        assert result is not None
+        _render(result)
     
     def test_dist_plot(self):
         """Test distribution plot with all backends."""
@@ -411,19 +436,19 @@ class TestPlottingFunctions:
                 continue
             # Auto-select column
             result = ps.dist_plot(df, backend=backend)
-            assert result is not None
+            _render(result)
             
             # Specific column
             result = ps.dist_plot(df, column="price", backend=backend)
-            assert result is not None
+            _render(result)
             
             # Custom bins
             result = ps.dist_plot(df, column="price", bins=20, backend=backend)
-            assert result is not None
+            _render(result)
             
             # Custom dimensions
             result = ps.dist_plot(df, column="price", width=600, height=400, backend=backend)
-            assert result is not None
+            _render(result)
     
     def test_missingval_plot(self):
         """Test missing value plot."""
@@ -435,18 +460,18 @@ class TestPlottingFunctions:
             if backend == "altair" and not _module_available("altair"):
                 continue
             result = ps.missingval_plot(df, backend=backend)
-            assert result is not None
+            _render(result)
             
             # With normalization
             result = ps.missingval_plot(df, backend=backend, normalize=True)
-            assert result is not None
+            _render(result)
             
             # Different sort orders
             result = ps.missingval_plot(df, backend=backend, sort="asc")
-            assert result is not None
+            _render(result)
             
             result = ps.missingval_plot(df, backend=backend, sort="desc")
-            assert result is not None
+            _render(result)
     
     def test_cat_plot(self):
         """Test categorical plot."""
@@ -457,15 +482,15 @@ class TestPlottingFunctions:
             if backend == "altair" and not _module_available("altair"):
                 continue
             result = ps.cat_plot(df, backend=backend)
-            assert result is not None
+            _render(result)
             
             # Custom top/bottom
             result = ps.cat_plot(df, top=5, bottom=5, backend=backend)
-            assert result is not None
+            _render(result)
             
             # Custom dimensions
             result = ps.cat_plot(df, width=700, height=500, backend=backend)
-            assert result is not None
+            _render(result)
     
     def test_corr_plot(self):
         """Test enhanced correlation plot."""
@@ -476,23 +501,23 @@ class TestPlottingFunctions:
             if backend == "altair" and not _module_available("altair"):
                 continue
             result = ps.corr_plot(df, backend=backend)
-            assert result is not None
+            _render(result)
             
             # Interactive vs non-interactive
             result = ps.corr_plot(df, interactive=True, backend=backend)
-            assert result is not None
+            _render(result)
             
             result = ps.corr_plot(df, interactive=False, backend=backend)
-            assert result is not None
+            _render(result)
             
             # With clustering
             if _scipy_cluster_available():
                 result = ps.corr_plot(df, clustered=True, backend=backend)
-                assert result is not None
+                _render(result)
             
             # Different methods
             result = ps.corr_plot(df, method="spearman", backend=backend)
-            assert result is not None
+            _render(result)
 
 
 class TestDataProcessingFunctions:
@@ -562,51 +587,43 @@ class TestUtilityFunctions:
             assert '-' not in col
             assert '.' not in col
     
-    def test_save_fig(self):
-        """Test figure saving utility."""
+    def test_save_fig(self, tmp_path):
+        """save_fig writes a real Plotly figure to HTML (no kaleido needed).
+
+        More save_fig cases (pathlib.Path, embedded plotly.js, Altair) are in
+        tests/test_plots.py.
+        """
         df = TestDataGenerator.create_basic_numeric_df(30)
-        
-        # Create a figure
         fig = ps.corr_heatmap(df, backend="plotly")
-        
-        # Test saving (we won't actually save to avoid file system issues)
-        # This would test the function signature and basic validation
-        try:
-            # Just test that the function can be called
-            # In a real test environment, you'd test actual file saving
-            import tempfile
-            import os
-            
-            with tempfile.TemporaryDirectory() as tmpdir:
-                filepath = os.path.join(tmpdir, "test_plot.png")
-                # Test would save here: ps.save_fig(fig, filepath)
-                pass
-        except Exception:
-            pass  # Skip file system tests in this context
+
+        filepath = tmp_path / "test_plot.html"
+        ps.save_fig(fig, str(filepath))
+
+        html = filepath.read_text(encoding="utf-8")
+        assert "Plotly.newPlot" in html
 
 
 class TestEdgeCases:
     """Test edge cases and error handling."""
     
     def test_empty_dataframe(self):
-        """Test functions with empty DataFrame."""
-        df_empty = pl.DataFrame()
-        
-        # These should handle empty DataFrames gracefully
-        try:
-            result = ps.xray(df_empty)
-        except Exception:
-            pass  # Expected to handle gracefully
+        """A frame without columns raises a clear error; a frame without rows works."""
+        with pytest.raises(ValueError, match="No numeric columns"):
+            ps.xray(pl.DataFrame())
+        empty_rows = pl.DataFrame({"x": pl.Series([], dtype=pl.Float64), "s": pl.Series([], dtype=pl.String)})
+        out = ps.xray(empty_rows, include="all", great_tables=False)
+        assert out["count"].to_list() == [0, 0]
+        _render(ps.xray(empty_rows, include="all"))
     
     def test_single_column_dataframe(self):
         """Test functions with single column DataFrame."""
         df_single = pl.DataFrame({'single_col': [1, 2, 3, 4, 5]})
         
         result = ps.xray(df_single)
-        assert result is not None
+        _render(result)
         
         result = ps.dist_plot(df_single, column='single_col')
-        assert result is not None
+        _render(result)
     
     def test_all_missing_column(self):
         """Test with columns that are all missing."""
@@ -616,10 +633,10 @@ class TestEdgeCases:
         })
         
         result = ps.xray(df_missing)
-        assert result is not None
+        _render(result)
         
         result = ps.missingval_plot(df_missing)
-        assert result is not None
+        _render(result)
     
     def test_constant_column(self):
         """Test with constant columns."""
@@ -629,7 +646,7 @@ class TestEdgeCases:
         })
         
         result = ps.xray(df_constant)
-        assert result is not None
+        _render(result)
     
     def test_invalid_parameters(self):
         """Test error handling for invalid parameters."""

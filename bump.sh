@@ -21,7 +21,10 @@ NEW="$MAJOR.$MINOR.$PATCH"
 ESC="${CUR//./\\.}"
 echo "$CUR  ->  $NEW"
 
-sed -i '' "s/$ESC/$NEW/g" "$INIT" README.md
+# "-i.bak" works with both GNU sed (Linux) and BSD sed (macOS); a bare
+# "-i ''" is BSD-only and makes GNU sed read the script as a file name.
+sed -i.bak "s/$ESC/$NEW/g" "$INIT" README.md
+rm -f "$INIT.bak" README.md.bak
 
 git add -A
 git commit -m "release: v$NEW"
