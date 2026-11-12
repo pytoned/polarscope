@@ -34,7 +34,9 @@ jobs:
         run: ruff check polarscope
 
       - name: Run tests
-        run: python -m pytest -q
+        # Includes the property-based tests (tests/test_properties.py); the
+        # coverage floor keeps new code from going untested.
+        run: python -m pytest -q --cov=polarscope --cov-report=term --cov-fail-under=90
 
   minimum-dependencies:
     name: Minimum dependencies
@@ -60,7 +62,8 @@ jobs:
             "kaleido==0.2.1" \
             "pytest==7.0.0" \
             "pytest-cov==4.0.0" \
-            "psutil==5.9.0"
+            "psutil==5.9.0" \
+            "hypothesis==6.100.0"
 
       - name: Run tests
         run: python -m pytest -q

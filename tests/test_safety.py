@@ -187,3 +187,71 @@ def test_an_id_named_correlation_target_is_analyzed():
     rows = {r["column"]: r for r in out.iter_rows(named=True)}
     assert rows["target_id"]["mean"] == 2.0
     assert rows["HIDE"]["correlation"] is not None
+
+
+# ── Reading the free memory (fake system files) ──────────────────────────────
+
+
+def _fake_files(monkeypatch, files: dict[str, str]) -> None:
+    import io
+
+    def fake_open(path, *args, **kwargs):
+        if path in files:
+            return io.StringIO(files[path])
+        raise FileNotFoundError(path)
+
+    monkeypatch.setattr(xray_mod, "open", fake_open, raising=False)
+
+
+def test_cgroup_v2_headroom_is_the_tightest_level(monkeypatch):
+    _fake_files(
+        monkeypatch,
+        {
+            "/proc/self/cgroup": "0::/app/worker\n",
+            "/sys/fs/cgroup/app/worker/memory.max": "max\n",
+            "/sys/fs/cgroup/app/worker/memory.current": "100\n",
+            "/sys/fs/cgroup/app/memory.max": "1000\n",
+            "/sys/fs/cgroup/app/memory.current": "400\n",
+            "/sys/fs/cgroup/memory.max": "5000\n",
+            "/sys/fs/cgroup/memory.current": "1000\n",
+        },
+    )
+    assert xray_mod._cgroup_headroom() == 600  # app: 1000 - 400
+
+
+def test_cgroup_v1_headroom_ignores_unlimited(monkeypatch):
+    _fake_files(
+        monkeypatch,
+        {
+            "/proc/self/cgroup": "4:memory:/pod\n3:cpu:/pod\n",
+            "/sys/fs/cgroup/memory/pod/memory.limit_in_bytes": "2048\n",
+            "/sys/fs/cgroup/memory/pod/memory.usage_in_bytes": "48\n",
+            "/sys/fs/cgroup/memory/memory.limit_in_bytes": "9223372036854771712\n",
+            "/sys/fs/cgroup/memory/memory.usage_in_bytes": "10\n",
+        },
+    )
+    assert xray_mod._cgroup_headroom() == 2000
+
+
+def test_no_cgroup_limit_reads_as_unknown(monkeypatch):
+    _fake_files(monkeypatch, {"/proc/self/cgroup": "0::/\n", "/sys/fs/cgroup/memory.max": "max\n"})
+    assert xray_mod._cgroup_headroom() is None
+    _fake_files(monkeypatch, {})
+    assert xray_mod._cgroup_headroom() is None
+
+
+def test_meminfo_is_read_without_psutil(monkeypatch):
+    import sys
+
+    monkeypatch.setitem(sys.modules, "psutil", None)  # import psutil fails
+    _fake_files(monkeypatch, {"/proc/meminfo": "MemTotal: 8192 kB\nMemAvailable: 2048 kB\n"})
+    assert xray_mod._os_available_memory() == 2048 * 1024
+
+
+def test_available_memory_takes_the_smaller_and_has_a_default(monkeypatch):
+    monkeypatch.setattr(xray_mod, "_os_available_memory", lambda: 8 * 1024**3)
+    monkeypatch.setattr(xray_mod, "_cgroup_headroom", lambda: 3 * 1024**3)
+    assert xray_mod._available_memory() == 3 * 1024**3
+    monkeypatch.setattr(xray_mod, "_os_available_memory", lambda: None)
+    monkeypatch.setattr(xray_mod, "_cgroup_headroom", lambda: None)
+    assert xray_mod._available_memory() == xray_mod._UNKNOWN_MEMORY

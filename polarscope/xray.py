@@ -757,11 +757,16 @@ def _distribution_query(
     # bin + n_bins * outlier: grouping on one UInt8 is about a quarter faster
     # than on the pair. _read_distribution decodes it.
     key = None
-    if lo == hi:
+    # A range so small that n_bins / range overflows (subnormal numbers,
+    # below ~1e-307) is drawn like a constant column: Polars folds that
+    # quotient into one constant, and 0 * inf would put values in no bin.
+    if lo == hi or not math.isfinite(12 / (hi - lo)):
         facts["histogram"] = [n_valid]
     elif math.isfinite(lo) and math.isfinite(hi):
         facts["n_bins"] = _histogram_bins(n_valid)
-        key = _histogram_bin_expr(x, lo, hi, facts["n_bins"]).cast(pl.UInt8)
+        # Non-strict: a value that somehow gets no bin is left out of the
+        # plot rather than failing the summary.
+        key = _histogram_bin_expr(x, lo, hi, facts["n_bins"]).cast(pl.UInt8, strict=False)
     else:
         facts["histogram"] = []
 
@@ -1109,10 +1114,10 @@ def _gather_column_facts(
                 # For opt_dtype only: the range decides the integer width.
                 exprs += [raw.min().alias("min"), raw.max().alias("max")]
             jobs.append(_Job(c, "id", frame(c).select(exprs)))
-            if dtype == pl.String:
+            if _is_stringy(dtype):
                 lengths = (
                     frame(c)
-                    .select(pl.col(c).str.len_chars().alias("length"))
+                    .select(_string_expr(c, dtype).str.len_chars().alias("length"))
                     .group_by("length")
                     .agg(pl.len().alias("count"))
                 )
@@ -1626,9 +1631,9 @@ def _gather_streaming_facts(
         elif kind == "id":
             if approx is not None:
                 f["n_unique"] = _streaming_distinct_count(lf, pl.col(c), approx, n_rows)
-            if dtype == pl.String:
+            if _is_stringy(dtype):
                 lengths = (
-                    lf.select(pl.col(c).str.len_chars().alias("length"))
+                    lf.select(_string_expr(c, dtype).str.len_chars().alias("length"))
                     .drop_nulls()
                     .group_by("length")
                     .agg(pl.len().alias("count"))

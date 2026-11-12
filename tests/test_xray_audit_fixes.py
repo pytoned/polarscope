@@ -457,3 +457,14 @@ class TestDisplay:
             ("Decimal(38, 2)", "Decimal(38, 2)"),
             ("Datetime(us)", "Datetime(us)"),
         ]
+
+
+class TestTinyRanges:
+    @pytest.mark.parametrize("values", [[0.0, 5e-324], [-1e-310, 1e-310], [0.0, 1e-320, 3e-320]])
+    def test_subnormal_ranges_are_one_bar(self, values):
+        # Found by the property tests: n_bins / range overflowed to inf, and
+        # the histogram cast failed ("conversion from f64 to u8 failed").
+        df = pl.DataFrame({"x": values})
+        for frame, kwargs in ((df, {}), (df.lazy(), {"exact": True}), (df.lazy(), {})):
+            plot = ps.xray(frame, **kwargs)._tbl_data["distribution_plot"][0]
+            assert list(plot) == [len(values)]
