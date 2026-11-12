@@ -8,7 +8,11 @@
 <meta property="og:title" content="🔬 Polarscope" />
 <meta property="og:description" content="X-ray your Polars DataFrames: summary stats, histogram nanoplots, outliers & correlations in one beautiful table." />
 <meta property="og:type" content="website" />
-<link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🔬</text></svg>" />
+<meta property="og:image" content="https://raw.githubusercontent.com/pytoned/polarscope/main/docs/img/logo/polarscope-social.png" />
+<meta name="twitter:card" content="summary_large_image" />
+<link rel="icon" href="img/favicon.svg" type="image/svg+xml" />
+<link rel="icon" href="img/favicon-32.png" sizes="32x32" type="image/png" />
+<link rel="apple-touch-icon" href="img/apple-touch-icon.png" />
 <link rel="preconnect" href="https://fonts.googleapis.com" />
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
@@ -64,7 +68,7 @@
   }
   nav .wrap { display: flex; align-items: center; justify-content: space-between; height: 64px; }
   .brand { display: flex; align-items: center; gap: .55rem; font-weight: 800; font-size: 1.15rem; }
-  .brand .scope { font-size: 1.35rem; }
+  .brand img { display: block; height: 40px; width: auto; }
   .nav-links { display: flex; align-items: center; gap: 1.4rem; }
   .nav-links a { color: var(--ink-700); font-weight: 600; font-size: .95rem; }
   .nav-links a:hover { color: var(--pink-600); }
@@ -204,7 +208,7 @@
     background: linear-gradient(135deg, var(--pink-600), var(--pink-400) 60%, var(--xray-blue));
     border-radius: 28px; padding: 3.4rem 2rem; color: #fff; box-shadow: var(--shadow-lg); position: relative; overflow: hidden;
   }
-  .final-card::before { content: "🔬"; position: absolute; font-size: 11rem; opacity: .12; right: -1rem; bottom: -2.5rem; }
+  .final-card::before { content: ""; position: absolute; width: 13rem; height: 13rem; right: -1.5rem; bottom: -2.5rem; background: url("img/polarscope-mark-white.svg") center / contain no-repeat; opacity: .16; }
   .final-card h2 { font-size: clamp(1.8rem, 4vw, 2.6rem); font-weight: 900; letter-spacing: -.02em; }
   .final-card p { margin-top: .7rem; font-size: 1.1rem; opacity: .95; }
   .final-card .cta { margin-top: 2rem; }
@@ -229,7 +233,7 @@
 
 <nav>
   <div class="wrap">
-    <div class="brand"><span class="scope">🔬</span> Polarscope</div>
+    <div class="brand"><img src="img/polarscope-logo.svg" alt="Polarscope" width="143" height="40" /></div>
     <div class="nav-links">
       <a href="#features">Features</a>
       <a href="#quickstart">Quick start</a>
@@ -265,7 +269,7 @@
     <div class="scope-wrap reveal">
       <div class="xray">
         <div class="xray-head">
-          <h3>🔬 X-ray · titanic</h3>
+          <h3><img src="img/polarscope-mark.svg" alt="" width="22" height="22" /> X-ray · titanic</h3>
           <p>156 rows × 12 columns · 6 shown · generated with <code style="font-size:.78rem">ps.xray(df, expanded=True)</code></p>
         </div>
         <table class="xt">
@@ -419,7 +423,7 @@ ps.<span class="tok-fn">xray</span>(
 
 <footer>
   <div class="wrap">
-    <div class="brand"><span class="scope">🔬</span> Polarscope</div>
+    <div class="brand"><img src="img/polarscope-logo.svg" alt="Polarscope" width="143" height="40" /></div>
     <div class="flinks">
       <a href="https://github.com/pytoned/polarscope" target="_blank" rel="noopener">GitHub</a>
       <a href="https://pypi.org/project/polarscope/" target="_blank" rel="noopener">PyPI</a>

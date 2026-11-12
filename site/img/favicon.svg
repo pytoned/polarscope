@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 64 64" role="img" aria-label="Polarscope">
+  <title>Polarscope</title>
+  <style>
+    .b{stroke:#0B1220} .c{fill:#CBD5E1}
+    @media (prefers-color-scheme: dark){.b{stroke:#FFFFFF} .c{fill:#475569}}
+  </style>
+  <path class="b" d="M8 18V8H18M46 8H56V18M56 46V56H46M18 56H8V46" fill="none" stroke-width="6" stroke-linecap="round" stroke-linejoin="round"/>
+  <rect class="c" x="16" y="18" width="32" height="10" rx="2"/>
+  <rect x="16" y="30" width="32" height="10" rx="2" fill="#06B6D4"/>
+  <rect class="c" x="16" y="42" width="32" height="6" rx="2"/>
+</svg>

@@ -1,0 +1,20 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 64 64" role="img" aria-label="Polarscope">
+  <title>Polarscope</title>
+  <rect width="64" height="64" rx="14" fill="#1E293B"/>
+  <g transform="translate(6.4 6.4) scale(0.8)">
+  <path d="M8 18V8H18M46 8H56V18M56 46V56H46M18 56H8V46" fill="none" stroke="#FFFFFF" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
+  <rect x="17" y="16" width="7.5" height="6.5" rx="1.5" fill="#475569"/>
+  <rect x="28.25" y="16" width="7.5" height="6.5" rx="1.5" fill="#475569"/>
+  <rect x="39.5" y="16" width="7.5" height="6.5" rx="1.5" fill="#475569"/>
+  <rect x="17" y="24.5" width="7.5" height="6.5" rx="1.5" fill="#06B6D4"/>
+  <rect x="28.25" y="24.5" width="7.5" height="6.5" rx="1.5" fill="#06B6D4"/>
+  <rect x="39.5" y="24.5" width="7.5" height="6.5" rx="1.5" fill="#06B6D4"/>
+  <rect x="17" y="33" width="7.5" height="6.5" rx="1.5" fill="#475569"/>
+  <rect x="28.25" y="33" width="7.5" height="6.5" rx="1.5" fill="#475569"/>
+  <rect x="39.5" y="33" width="7.5" height="6.5" rx="1.5" fill="#475569"/>
+  <rect x="17" y="41.5" width="7.5" height="6.5" rx="1.5" fill="#475569"/>
+  <rect x="28.25" y="41.5" width="7.5" height="6.5" rx="1.5" fill="#475569"/>
+  <rect x="39.5" y="41.5" width="7.5" height="6.5" rx="1.5" fill="#475569"/>
+  <path d="M12 32H52" stroke="#06B6D4" stroke-width="2" stroke-linecap="round"/>
+  </g>
+</svg>
