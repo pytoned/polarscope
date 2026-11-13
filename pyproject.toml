@@ -29,6 +29,7 @@ license = "MIT"
 Homepage = "https://github.com/pytoned/polarscope"
 Repository = "https://github.com/pytoned/polarscope"
 Issues = "https://github.com/pytoned/polarscope/issues"
+Funding = "https://github.com/sponsors/pytoned"
 
 [project.optional-dependencies]
 plotly = ["kaleido>=0.2"]

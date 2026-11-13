@@ -380,6 +380,14 @@ Contributions are welcome! Feel free to report bugs or suggest improvements.
 
 ---
 
+## 💖 Support Polarscope
+
+Polarscope is free, MIT licensed and built in spare time. If it saves you time,
+you can support it through [GitHub Sponsors](https://github.com/sponsors/pytoned),
+one-time or monthly. Starring the repository and reporting bugs help too.
+
+---
+
 ## 📄 License
 
 MIT License - see [LICENSE](https://github.com/pytoned/polarscope/blob/main/LICENSE) file for details.
